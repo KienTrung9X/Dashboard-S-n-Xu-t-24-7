@@ -38,6 +38,21 @@
     .animate-fade-in-up {
       animation: fadeIn-up 0.3s ease-out forwards;
     }
+    /* Animation for the critical alert */
+    .light .animate-pulse-bg {
+      animation: pulse-bg-light 2s ease-in-out infinite;
+    }
+    .dark .animate-pulse-bg {
+      animation: pulse-bg-dark 2s ease-in-out infinite;
+    }
+    @keyframes pulse-bg-light {
+      0%, 100% { background-color: #ffedd5; } /* orange-200 */
+      50% { background-color: #fed7aa; } /* orange-300 */
+    }
+    @keyframes pulse-bg-dark {
+      0%, 100% { background-color: rgba(124, 45, 18, 0.5); } /* orange-900/50 */
+      50% { background-color: rgba(124, 45, 18, 0.7); } /* orange-900/70 */
+    }
   </style>
 <script type="importmap">
 {

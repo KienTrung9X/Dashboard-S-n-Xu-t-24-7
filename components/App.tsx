@@ -45,6 +45,7 @@ type MachineStatus = 'all' | 'active' | 'inactive';
 
 const App: React.FC = () => {
   const initialFilters = useMemo(() => getInitialFilters(), []);
+  const REFRESH_INTERVAL_SECONDS = 60;
 
   const [startDate, setStartDate] = useState<string>(initialFilters?.startDate || initialFilterData.defaultDate);
   const [endDate, setEndDate] = useState<string>(initialFilters?.endDate || initialFilterData.defaultDate);
@@ -62,8 +63,13 @@ const App: React.FC = () => {
   const [availabilityThreshold, setAvailabilityThreshold] = useState<number>(initialFilters?.availabilityThreshold ?? 90);
   const [performanceThreshold, setPerformanceThreshold] = useState<number>(initialFilters?.performanceThreshold ?? 95);
   const [qualityThreshold, setQualityThreshold] = useState<number>(initialFilters?.qualityThreshold ?? 99);
+  
+  // Alert state
   const [underperformingMachines, setUnderperformingMachines] = useState<string[]>([]);
-  const [isAlertVisible, setIsAlertVisible] = useState(true);
+  const [isAlertVisible, setIsAlertVisible] = useState(false);
+  const [isAlertCritical, setIsAlertCritical] = useState(false);
+  const lastUnderperformingOeeRef = useRef<number | null>(null);
+  const alertTimeoutRef = useRef<number | null>(null);
   
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== 'undefined' && localStorage.getItem('theme')) {
@@ -74,6 +80,11 @@ const App: React.FC = () => {
     }
     return 'light';
   });
+
+  // Auto-refresh state
+  const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
+  const [timeToNextRefresh, setTimeToNextRefresh] = useState(REFRESH_INTERVAL_SECONDS);
+  const intervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -149,6 +160,51 @@ const App: React.FC = () => {
         }
     };
   }, [startDate, endDate, selectedArea, selectedShift, dateSelectionMode, selectedStatus]);
+  
+  // Effect for auto-refresh timer
+  useEffect(() => {
+      const stopInterval = () => {
+          if (intervalRef.current !== null) {
+              clearInterval(intervalRef.current);
+              intervalRef.current = null;
+          }
+      };
+
+      const startInterval = () => {
+          stopInterval();
+          intervalRef.current = window.setInterval(() => {
+              setTimeToNextRefresh(prev => {
+                  if (prev <= 1) {
+                      if (!isLoading) refreshData();
+                      return REFRESH_INTERVAL_SECONDS;
+                  }
+                  return prev - 1;
+              });
+          }, 1000);
+      };
+
+      const handleVisibilityChange = () => {
+          if (document.hidden) {
+              stopInterval();
+          } else if (isAutoRefreshEnabled) {
+              setTimeToNextRefresh(REFRESH_INTERVAL_SECONDS);
+              startInterval();
+          }
+      };
+
+      if (isAutoRefreshEnabled && !document.hidden) {
+          startInterval();
+      } else {
+          stopInterval();
+      }
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      return () => {
+          stopInterval();
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+  }, [isAutoRefreshEnabled, isLoading]);
 
   // Effect to persist filters to localStorage
   useEffect(() => {
@@ -171,21 +227,55 @@ const App: React.FC = () => {
     }
   }, [startDate, endDate, dateSelectionMode, selectedArea, selectedShift, selectedStatus, oeeThreshold, availabilityThreshold, performanceThreshold, qualityThreshold]);
 
-  // Effect to calculate underperforming machines
+  // Effect to calculate underperforming machines and trigger alerts
   useEffect(() => {
-    if (data?.productionLog) {
-      const lowOeeMachines = data.productionLog
-        .filter(log => log.OEE < (oeeThreshold / 100))
-        .map(log => log.MACHINE_ID);
+    if (data?.productionLog && data.productionLog.length > 0) {
+      const underperformers = data.productionLog.filter(log => log.OEE < (oeeThreshold / 100));
+      const lowOeeMachines = underperformers.map(log => log.MACHINE_ID);
       setUnderperformingMachines(lowOeeMachines);
-      // Automatically show the alert if there are underperforming machines
-      if(lowOeeMachines.length > 0) {
+
+      if (lowOeeMachines.length > 0) {
+        const currentAvgOee = underperformers.reduce((sum, log) => sum + log.OEE, 0) / underperformers.length;
+
+        // Make alert critical if performance has worsened
+        if (lastUnderperformingOeeRef.current !== null && currentAvgOee < lastUnderperformingOeeRef.current) {
+          setIsAlertCritical(true);
+        } else {
+          setIsAlertCritical(false);
+        }
+        lastUnderperformingOeeRef.current = currentAvgOee;
         setIsAlertVisible(true);
+      } else {
+        // No underperforming machines, reset alert state
+        setIsAlertVisible(false);
+        setIsAlertCritical(false);
+        lastUnderperformingOeeRef.current = null;
       }
     } else {
       setUnderperformingMachines([]);
+      setIsAlertVisible(false);
+      setIsAlertCritical(false);
+      lastUnderperformingOeeRef.current = null;
     }
   }, [data, oeeThreshold]);
+
+  // Effect to auto-dismiss the alert
+  useEffect(() => {
+    if (alertTimeoutRef.current) {
+      clearTimeout(alertTimeoutRef.current);
+    }
+    if (isAlertVisible) {
+      alertTimeoutRef.current = window.setTimeout(() => {
+        setIsAlertVisible(false);
+      }, 15000); // 15-second auto-dismiss
+    }
+    return () => {
+      if (alertTimeoutRef.current) {
+        clearTimeout(alertTimeoutRef.current);
+      }
+    };
+  }, [isAlertVisible]);
+
 
   const handleFilterChange = (filters: { 
     startDate: string, 
@@ -202,6 +292,15 @@ const App: React.FC = () => {
     setSelectedShift(filters.mode !== 'single' ? 'all' : filters.shift);
     setSelectedStatus(filters.status);
   };
+  
+  const handleManualRefresh = () => {
+    if (isLoading) return;
+    refreshData();
+    if (isAutoRefreshEnabled) {
+        setTimeToNextRefresh(REFRESH_INTERVAL_SECONDS);
+    }
+  };
+
 
   const handleClearFilters = () => {
     showNotification('Filters have been reset to default.', 'info');
@@ -230,6 +329,7 @@ const App: React.FC = () => {
   const handleDataSubmit = (newData: NewProductionData) => {
     addDefectData(newData);
     setIsDataEntryModalOpen(false);
+    showNotification('New defect record added successfully.', 'success');
     refreshData();
   };
 
@@ -273,7 +373,10 @@ const App: React.FC = () => {
 
   const modalProductionRecord = useMemo(() => {
     if (!selectedMachineId || !data) return null;
-    return data.productionLog.find(p => p.MACHINE_ID === selectedMachineId) || null;
+    // Find the latest record for the machine within the filtered data for context
+    return data.productionLog
+      .filter(p => p.MACHINE_ID === selectedMachineId)
+      .sort((a,b) => new Date(b.COMP_DAY).getTime() - new Date(a.COMP_DAY).getTime())[0] || null;
   }, [selectedMachineId, data]);
 
   const modalAdjustmentHistory = useMemo(() => {
@@ -293,40 +396,59 @@ const App: React.FC = () => {
     if (!data?.performance?.sevenDayTrend) return [];
     
     const target = oeeThreshold / 100;
+    const warningTarget = target - 0.05; // 5 percentage points below target
+
     return data.performance.sevenDayTrend.map((point, index, arr) => {
         const oee = point.oee ?? 0;
-        let oeeAbove: number | null = (oee >= target) ? oee : null;
-        let oeeBelow: number | null = (oee < target) ? oee : null;
 
+        let oeeAbove: number | null = null;
+        let oeeWarning: number | null = null;
+        let oeeBelow: number | null = null;
+
+        // Assign value to the correct segment
+        if (oee >= target) {
+            oeeAbove = oee;
+        } else if (oee >= warningTarget) {
+            oeeWarning = oee;
+        } else {
+            oeeBelow = oee;
+        }
+
+        // Handle connections for smooth line transitions
         if (index > 0) {
             const prevOee = arr[index - 1].oee ?? 0;
-            if (prevOee >= target && oee < target) { oeeAbove = oee; }
-            if (prevOee < target && oee >= target) { oeeBelow = oee; }
+            const prevIsAbove = prevOee >= target;
+            const prevIsWarning = prevOee < target && prevOee >= warningTarget;
+            const prevIsBelow = prevOee < warningTarget;
+
+            const isAbove = oee >= target;
+            const isWarning = oee < target && oee >= warningTarget;
+            const isBelow = oee < warningTarget;
+            
+            // If the state changes, connect the lines by giving the previous segment the current value
+            if (prevIsAbove && (isWarning || isBelow)) oeeAbove = oee;
+            if (prevIsWarning && (isAbove || isBelow)) oeeWarning = oee;
+            if (prevIsBelow && (isAbove || isWarning)) oeeBelow = oee;
         }
         
-        return { date: point.date, oeeAbove, oeeBelow };
+        return { date: point.date, oeeAbove, oeeWarning, oeeBelow };
     });
   }, [data?.performance?.sevenDayTrend, oeeThreshold]);
 
   const menuSections = [
     {
-      title: 'Data tables',
+      title: 'Data Actions',
       items: [
         {
           label: 'View Database Tables',
           onClick: () => setIsSchemaPanelOpen(true),
           icon: <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5 4a3 3 0 00-3 3v6a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H5zm-1 9v-1h5v2H5a1 1 0 01-1-1zm7 1h4a1 1 0 001-1v-1h-5v2zm0-4h5V8h-5v2zM4 8h5v2H4V8z" clipRule="evenodd" /></svg>
         },
-      ]
-    },
-    {
-      title: 'Related app settings',
-      items: [
         {
           label: 'Data Entry (Nhập Lỗi)',
           onClick: () => setIsDataEntryModalOpen(true),
           icon: <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
-        }
+        },
       ]
     }
   ];
@@ -401,6 +523,8 @@ const App: React.FC = () => {
       );
     }
     
+    const warningThreshold = oeeThreshold - 5;
+    
     return (
       <main className="space-y-12 mt-6">
         {activeTab === 'overview' && (
@@ -410,13 +534,13 @@ const App: React.FC = () => {
                     {dateSelectionMode === 'range' ? `Hiệu Suất Tổng Quan (${startDate} to ${endDate})` : 'Hiệu Suất Tổng Quan Trong Ngày'}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-6">
-                      <KpiCard title="Tổng Sản Lượng" value={data.summary.totalProduction} unit="pcs" precision={0}/>
-                      <KpiCard title="Tổng Phế Phẩm" value={data.summary.totalDefects} unit="pcs" precision={0}/>
-                      <KpiCard title="Tổng Dừng Máy" value={data.summary.totalDowntime} unit="phút" precision={0} />
-                      <KpiCard title="Availability" value={data.summary.avgAvailability} />
-                      <KpiCard title="Performance" value={data.summary.avgPerformance} />
-                      <KpiCard title="Quality" value={data.summary.avgQuality} />
-                      <KpiCard title="Utilization" value={data.summary.machineUtilization} />
+                      <KpiCard title="Tổng Sản Lượng" value={data.summary.totalProduction} unit="pcs" precision={0} description="Tổng số sản phẩm được sản xuất trong khoảng thời gian đã chọn." />
+                      <KpiCard title="Tổng Phế Phẩm" value={data.summary.totalDefects} unit="pcs" precision={0} description="Tổng số sản phẩm bị lỗi hoặc không đạt tiêu chuẩn chất lượng." />
+                      <KpiCard title="Tổng Dừng Máy" value={data.summary.totalDowntime} unit="phút" precision={0} description="Tổng thời gian (phút) mà máy móc không hoạt động theo kế hoạch." />
+                      <KpiCard title="Availability" value={data.summary.avgAvailability} description="Tỷ lệ thời gian máy thực sự chạy so với thời gian kế hoạch. Công thức: (Thời gian chạy) / (Thời gian kế hoạch)." />
+                      <KpiCard title="Performance" value={data.summary.avgPerformance} description="Tốc độ sản xuất thực tế so với tốc độ thiết kế. Công thức: (Tổng sản lượng * Thời gian chu kỳ lý tưởng) / (Thời gian chạy)." />
+                      <KpiCard title="Quality" value={data.summary.avgQuality} description="Tỷ lệ sản phẩm đạt chất lượng so với tổng sản lượng. Công thức: (Tổng sản lượng - Tổng phế phẩm) / (Tổng sản lượng)." />
+                      <KpiCard title="Utilization" value={data.summary.machineUtilization} description="Tỷ lệ thời gian máy được sử dụng so với tổng thời gian có sẵn (bao gồm cả thời gian dừng không kế hoạch)." />
                       <div className="lg:col-span-2 xl:col-span-2">
                           <OeeGauge
                             value={data.summary.avgOee}
@@ -477,15 +601,16 @@ const App: React.FC = () => {
                     </div>
                      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
                         <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Xu Hướng OEE (7 Ngày Gần Nhất)</h3>
-                        <TrendChart 
+                        <TrendChart
                             data={oeeTrendDataWithColor}
                             lines={[
                                 { dataKey: 'oeeAbove', stroke: '#22c55e', name: `OEE (>= ${oeeThreshold}%)` },
-                                { dataKey: 'oeeBelow', stroke: '#ef4444', name: `OEE (< ${oeeThreshold}%)` },
+                                { dataKey: 'oeeWarning', stroke: '#facc15', name: `OEE (${warningThreshold}-${oeeThreshold}%)` },
+                                { dataKey: 'oeeBelow', stroke: '#ef4444', name: `OEE (< ${warningThreshold}%)` },
                             ]}
                             isPercentage={true}
-                            targetLines={[{ value: oeeThreshold / 100, label: `Mục tiêu ${oeeThreshold}%`, stroke: '#facc15' }]}
-                            areaLines={['oeeBelow']}
+                            targetLines={[{ value: oeeThreshold / 100, label: `Mục tiêu ${oeeThreshold}%`, stroke: '#a855f7' }]}
+                            areaLines={['oeeWarning', 'oeeBelow']}
                             theme={theme}
                         />
                     </div>
@@ -580,14 +705,44 @@ const App: React.FC = () => {
     )
   }
 
+  const alertBaseClasses = "mb-6 p-4 border-l-4 rounded-r-lg flex justify-between items-center shadow-md transition-all duration-500";
+  const alertNormalClasses = "bg-yellow-100 border-yellow-500 text-yellow-800 dark:bg-yellow-900/40 dark:border-yellow-400 dark:text-yellow-200 animate-fade-in-up";
+  const alertCriticalClasses = "bg-orange-200 border-orange-500 text-orange-800 dark:bg-orange-900/50 dark:border-orange-400 dark:text-orange-200 animate-pulse-bg";
+
   return (
     <div className="min-h-screen p-4 sm:p-6 lg:p-8 flex flex-col">
-      <header className="mb-8 flex flex-wrap items-center gap-6">
+      <header className="mb-8 flex flex-wrap items-center gap-4">
         <HamburgerMenu sections={menuSections} />
         <div className="flex-grow">
           <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white">Dashboard Sản Xuất 24/7</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Phân tích hiệu suất, chất lượng và thời gian dừng máy.</p>
         </div>
+        
+        <div className="flex items-center gap-4 bg-gray-100 dark:bg-gray-800 p-2 rounded-lg">
+            <div className="flex items-center gap-2">
+                <label htmlFor="auto-refresh-toggle" className="text-sm font-medium text-gray-500 dark:text-gray-400 cursor-pointer">Auto Refresh</label>
+                <div className="relative inline-block w-10 align-middle select-none transition duration-200 ease-in">
+                    <input type="checkbox" name="auto-refresh-toggle" id="auto-refresh-toggle" checked={isAutoRefreshEnabled} onChange={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                    <label htmlFor="auto-refresh-toggle" className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 dark:bg-gray-600 cursor-pointer"></label>
+                </div>
+                <style>{`
+                  .toggle-checkbox { transition: all 0.2s ease-in-out; left: 0; }
+                  .toggle-checkbox:checked { transform: translateX(1rem); border-color: #38bdf8; /* cyan-500 */ }
+                  .toggle-checkbox:checked + .toggle-label { background-color: #38bdf8; }
+                `}</style>
+            </div>
+            <div className="flex items-center gap-2">
+                {isAutoRefreshEnabled && !isLoading && (
+                    <span className="text-sm text-gray-400 dark:text-gray-500 w-24 text-center animate-fade-in-up">Next in {timeToNextRefresh}s</span>
+                )}
+                <button onClick={handleManualRefresh} disabled={isLoading} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-900 focus:ring-cyan-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Refresh data">
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                       <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.667 0l3.181-3.183m-4.991-2.695a8.25 8.25 0 00-11.667 0l-3.181 3.183" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
         <button
             onClick={() => setIsHelpModalOpen(true)}
             className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-900 focus:ring-cyan-500 transition-colors"
@@ -638,15 +793,22 @@ const App: React.FC = () => {
       </nav>
       
       {underperformingMachines.length > 0 && isAlertVisible && (
-        <div className="mb-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 dark:bg-yellow-900/40 dark:border-yellow-400 dark:text-yellow-200 rounded-r-lg flex justify-between items-center shadow-md animate-fade-in-up">
+        <div className={`${alertBaseClasses} ${isAlertCritical ? alertCriticalClasses : alertNormalClasses}`}>
             <div>
                 <p className="font-bold flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-4a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clipRule="evenodd" /></svg>
-                  OEE Alert
+                  {isAlertCritical ? 'OEE Critical Alert' : 'OEE Alert'}
                 </p>
-                <p className="mt-1">The following machines are below the {oeeThreshold}% threshold: <span className="font-semibold">{underperformingMachines.join(', ')}</span></p>
+                <p className="mt-1">
+                    {isAlertCritical ? 'Performance has worsened! ' : ''}
+                    The following machines are below the {oeeThreshold}% threshold: <span className="font-semibold">{underperformingMachines.join(', ')}</span>
+                </p>
             </div>
-            <button onClick={() => setIsAlertVisible(false)} className="p-1 rounded-full hover:bg-yellow-200 dark:hover:bg-yellow-800 transition-colors" aria-label="Dismiss alert">
+            <button 
+              onClick={() => setIsAlertVisible(false)} 
+              className={`p-1 rounded-full ${isAlertCritical ? 'hover:bg-orange-300 dark:hover:bg-orange-800' : 'hover:bg-yellow-200 dark:hover:bg-yellow-800'} transition-colors`}
+              aria-label="Dismiss alert"
+            >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
         </div>

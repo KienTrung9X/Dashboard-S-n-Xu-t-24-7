@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { MachineInfo, DowntimeRecord, ProductionDaily, DefectAdjustmentLog, DataPoint } from '../types';
 import SimplePieChart from './SimplePieChart';
@@ -12,25 +13,43 @@ interface MachineDetailsModalProps {
   theme?: 'light' | 'dark';
 }
 
+// Reusable card component for consistent styling
+const Card: React.FC<{ title: string; children: React.ReactNode; className?: string }> = ({ title, children, className = '' }) => (
+    <section className={`bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md ${className}`}>
+        <h3 className="text-lg font-semibold text-cyan-500 dark:text-cyan-400 mb-3 border-l-4 border-cyan-500 pl-3">{title}</h3>
+        <div className="pt-2">
+            {children}
+        </div>
+    </section>
+);
+
+
+const SpecItem: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+    <div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">{label}</p>
+        <p className="font-semibold text-lg text-gray-800 dark:text-white">{value}</p>
+    </div>
+);
+
 const OeeMetric = ({ title, value, isPrimary = false }: { title: string, value: number, isPrimary?: boolean }) => {
     const percentage = (value * 100).toFixed(1);
-    let colorClass = 'text-green-400';
-    if (value < 0.9) colorClass = 'text-yellow-400';
-    if (value < 0.8) colorClass = 'text-red-400';
+    let colorClass = 'text-green-500 dark:text-green-400';
+    if (value < 0.9) colorClass = 'text-yellow-500 dark:text-yellow-400';
+    if (value < 0.8) colorClass = 'text-red-500 dark:text-red-400';
 
     if (isPrimary) {
         return (
             <div className="text-center">
-                <p className="font-bold text-cyan-400 text-4xl md:text-5xl">{percentage}%</p>
-                <p className="text-lg text-gray-400 mt-2">{title}</p>
+                <p className={`font-bold text-4xl md:text-5xl ${colorClass}`}>{percentage}%</p>
+                <p className="text-lg text-gray-500 dark:text-gray-400 mt-2">{title}</p>
             </div>
         );
     }
     
     return (
-        <div className="text-center">
+        <div className="text-center p-2">
             <p className={`font-bold ${colorClass} text-2xl md:text-3xl`}>{percentage}%</p>
-            <p className="text-sm text-gray-400 mt-1">{title}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{title}</p>
         </div>
     );
 };
@@ -58,8 +77,6 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
       return [];
     }
 
-    // FIX: By explicitly typing the accumulator `acc`, we ensure `downtimeByReason` is correctly typed as Record<string, number>.
-    // This resolves the issue where `value` was inferred as `unknown` in the subsequent `.map` and `.sort` operations.
     const downtimeByReason = downtimeRecords.reduce((acc: Record<string, number>, record) => {
       acc[record.DOWNTIME_REASON] = (acc[record.DOWNTIME_REASON] || 0) + record.DOWNTIME_MIN;
       return acc;
@@ -85,8 +102,8 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
       aria-modal="true"
       role="dialog"
     >
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col text-gray-900 dark:text-white animate-fade-in-up">
-        <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="bg-gray-100 dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col text-gray-900 dark:text-white animate-fade-in-up">
+        <header className="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-lg">
           {machineInfo ? (
             <div className="flex items-center gap-3">
               <span className={`h-3 w-3 rounded-full ${machineInfo.STATUS === 'active' ? 'bg-green-500' : 'bg-gray-500'}`}></span>
@@ -102,79 +119,75 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
           </button>
         </header>
 
-        <main className="p-6 overflow-y-auto">
+        <main className="p-6 overflow-y-auto bg-gray-50 dark:bg-gray-900">
           {!machineInfo || !productionRecord ? (
             <div className="flex items-center justify-center h-64">
               <p className="text-gray-400">Loading machine data...</p>
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Top section with machine specs */}
-              <section className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-100 dark:bg-gray-900/50 p-4 rounded-lg">
-                <div><p className="text-sm text-gray-500 dark:text-gray-400">Line ID</p><p className="font-semibold text-lg">{machineInfo.LINE_ID}</p></div>
-                <div><p className="text-sm text-gray-500 dark:text-gray-400">Item Code</p><p className="font-semibold text-lg">{productionRecord.ITEM_CODE}</p></div>
-                <div><p className="text-sm text-gray-500 dark:text-gray-400">Design Speed</p><p className="font-semibold text-lg">{machineInfo.DESIGN_SPEED} units/min</p></div>
-                <div><p className="text-sm text-gray-500 dark:text-gray-400">Ideal Cycle Time</p><p className="font-semibold text-lg">{machineInfo.IDEAL_CYCLE_TIME} min/unit</p></div>
-              </section>
-
-              {/* OEE & KPIs */}
-              <section>
-                <h3 className="text-xl font-semibold mb-4">Daily Performance (Shift: {productionRecord.SHIFT})</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center bg-gray-100 dark:bg-gray-900/50 p-4 rounded-lg">
-                  <div className="md:col-span-1"><OeeMetric title="OEE" value={productionRecord.OEE} isPrimary /></div>
-                  <div className="md:col-span-3 grid grid-cols-3 gap-4">
-                      <OeeMetric title="Availability" value={productionRecord.availability ?? 0} />
-                      <OeeMetric title="Performance" value={productionRecord.performance ?? 0} />
-                      <OeeMetric title="Quality" value={productionRecord.quality ?? 0} />
+              
+              <Card title="Machine Specifications">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <SpecItem label="Line ID" value={machineInfo.LINE_ID} />
+                      <SpecItem label="Item Code" value={productionRecord.ITEM_CODE} />
+                      <SpecItem label="Design Speed" value={`${machineInfo.DESIGN_SPEED} units/min`} />
+                      <SpecItem label="Ideal Cycle Time" value={`${machineInfo.IDEAL_CYCLE_TIME} min/unit`} />
                   </div>
+              </Card>
+
+              <Card title={`Daily Performance (Shift: ${productionRecord.SHIFT})`}>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                    <div className="md:col-span-1 border-r-0 md:border-r border-gray-200 dark:border-gray-700 pr-0 md:pr-6 flex justify-center">
+                        <OeeMetric title="OEE" value={productionRecord.OEE} isPrimary />
+                    </div>
+                    <div className="md:col-span-2 grid grid-cols-3 gap-4">
+                        <OeeMetric title="Availability" value={productionRecord.availability ?? 0} />
+                        <OeeMetric title="Performance" value={productionRecord.performance ?? 0} />
+                        <OeeMetric title="Quality" value={productionRecord.quality ?? 0} />
+                    </div>
                 </div>
-              </section>
+              </Card>
 
-              {/* Downtime Analysis */}
-              <section>
-                  <h3 className="text-xl font-semibold mb-4">Downtime Analysis</h3>
-                  <div className="bg-gray-100 dark:bg-gray-900/50 p-4 rounded-lg">
-                      <SimplePieChart data={downtimeChartData} theme={theme} />
-                  </div>
-              </section>
+              <Card title="Downtime Analysis">
+                  <SimplePieChart data={downtimeChartData} theme={theme} />
+              </Card>
 
-              {/* Defect Adjustment History */}
-              <section>
-                  <h3 className="text-xl font-semibold mb-4">Defect Adjustment History</h3>
-                  <div className="bg-gray-100 dark:bg-gray-900/50 p-4 rounded-lg">
-                      <button 
-                        onClick={() => setShowHistory(!showHistory)} 
-                        className="text-cyan-500 dark:text-cyan-400 hover:text-cyan-600 dark:hover:text-cyan-300 mb-2"
-                      >
-                        {showHistory ? 'Hide History' : 'Show History'} ({adjustmentHistory.length} records)
-                      </button>
-                      {showHistory && (
-                        <div className="overflow-x-auto mt-2 max-h-48">
-                            <table className="min-w-full text-sm">
-                                <thead className="bg-gray-200 dark:bg-gray-700">
-                                    <tr>
-                                        <th className="p-2 text-left">Timestamp</th>
-                                        <th className="p-2 text-left">Previous Value</th>
-                                        <th className="p-2 text-left">New Value</th>
-                                        <th className="p-2 text-left">User</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {adjustmentHistory.map(log => (
-                                        <tr key={log.logId}>
-                                            <td className="p-2">{new Date(log.timestamp).toLocaleString()}</td>
-                                            <td className="p-2">{log.previousValue}</td>
-                                            <td className="p-2 text-cyan-500 dark:text-cyan-400">{log.newValue}</td>
-                                            <td className="p-2">{log.user}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                      )}
-                      {adjustmentHistory.length === 0 && <p className="text-gray-500">No adjustments recorded for this machine.</p>}
-                  </div>
-              </section>
+              <Card title="Defect Adjustment History">
+                <div>
+                    <button 
+                      onClick={() => setShowHistory(!showHistory)} 
+                      className="text-cyan-500 dark:text-cyan-400 hover:text-cyan-600 dark:hover:text-cyan-300 text-sm font-medium mb-2"
+                    >
+                      {showHistory ? 'Hide History' : 'Show History'} ({adjustmentHistory.length} records)
+                    </button>
+                    {showHistory && (
+                      <div className="overflow-x-auto mt-2 max-h-48 border-t border-gray-200 dark:border-gray-700 pt-2">
+                          <table className="min-w-full text-sm">
+                              <thead className="bg-gray-100 dark:bg-gray-700/50">
+                                  <tr>
+                                      <th className="p-2 text-left font-semibold">Timestamp</th>
+                                      <th className="p-2 text-left font-semibold">Previous Value</th>
+                                      <th className="p-2 text-left font-semibold">New Value</th>
+                                      <th className="p-2 text-left font-semibold">User</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                  {adjustmentHistory.map(log => (
+                                      <tr key={log.logId}>
+                                          <td className="p-2">{new Date(log.timestamp).toLocaleString()}</td>
+                                          <td className="p-2">{log.previousValue}</td>
+                                          <td className="p-2 text-cyan-500 dark:text-cyan-400 font-semibold">{log.newValue}</td>
+                                          <td className="p-2">{log.user}</td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                    )}
+                    {adjustmentHistory.length === 0 && !showHistory && <p className="text-gray-500 text-sm">No adjustments recorded for this machine.</p>}
+                 </div>
+              </Card>
             </div>
           )}
         </main>
