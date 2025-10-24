@@ -1,4 +1,5 @@
 
+
 import { ProductionDaily, DowntimeRecord, DefectRecord, DashboardData, DataPoint, TrendData, Top5DefectLine, Top5DowntimeMachine, StackedBarDataPoint, BoxplotDataPoint, HeatmapDataPoint, MachineInfo, NewProductionData, DefectAdjustmentLog } from '../types';
 import { quantile } from 'simple-statistics';
 
@@ -21,7 +22,7 @@ export const machineInfoData: MachineInfo[] = [
     { MACHINE_ID: 'M06', MACHINE_NAME: 'Finishing Line 1', LINE_ID: '51', IDEAL_CYCLE_TIME: 0.08, DESIGN_SPEED: 12, STATUS: 'active' },
 ];
 
-// Expanded mock data to cover 7 days, multiple lines, machines, and areas
+// Expanded mock data to cover 30 days, multiple lines, machines, and areas
 // Changed to `let` to allow for additions
 // FIX: Add explicit type `ProductionDaily[]` to the return of the flatMap callback to fix type inference issue with the STATUS property.
 export let productionDailyData: ProductionDaily[] = Array.from({ length: 30 }).flatMap((_, i): ProductionDaily[] => {
@@ -62,7 +63,8 @@ export let defectRecords: DefectRecord[] = Array.from({ length: 30 }).flatMap((_
     const date = new Date('2025-10-30');
     date.setDate(date.getDate() - i);
     const dateString = date.toISOString().slice(0, 10);
-    return [
+    // FIX: Add `as const` to preserve the literal types of the SHIFT property, preventing it from being widened to `string`.
+    const mockRecords = [
         { Defect_ID: i * 6 + 1, COMP_DAY: dateString, MACHINE_ID: 'M01', DEFECT_TYPE: 'Skip stitch', DEFECT_QTY: 85 - i * 5, SHIFT: 'B', ITEM_CODE: '05CITape' },
         { Defect_ID: i * 6 + 2, COMP_DAY: dateString, MACHINE_ID: 'M01', DEFECT_TYPE: 'Tape jam', DEFECT_QTY: 40 + i * 2, SHIFT: 'C', ITEM_CODE: '05CITape' },
         { Defect_ID: i * 6 + 3, COMP_DAY: dateString, MACHINE_ID: 'M02', DEFECT_TYPE: 'Cosmetic', DEFECT_QTY: 150 + i * 10, SHIFT: 'A', ITEM_CODE: '05CITape' },
@@ -70,7 +72,23 @@ export let defectRecords: DefectRecord[] = Array.from({ length: 30 }).flatMap((_
         { Defect_ID: i * 6 + 5, COMP_DAY: dateString, MACHINE_ID: 'M04', DEFECT_TYPE: 'Paint Drip', DEFECT_QTY: 60, SHIFT: 'B', ITEM_CODE: 'Panel_A' },
         { Defect_ID: i * 6 + 6, COMP_DAY: dateString, MACHINE_ID: 'M05', DEFECT_TYPE: 'Scratch', DEFECT_QTY: 40, SHIFT: 'C', ITEM_CODE: 'Panel_B' },
         { Defect_ID: i * 6 + 7, COMP_DAY: dateString, MACHINE_ID: 'M06', DEFECT_TYPE: 'Packaging', DEFECT_QTY: 100 - i * 3, SHIFT: 'B', ITEM_CODE: 'Final Assy' },
-    ];
+    ] as const;
+    // Add new detailed fields to mock data
+    return mockRecords.map((rec, index) => {
+        const machine = machineInfoData.find(m => m.MACHINE_ID === rec.MACHINE_ID);
+        return {
+            ...rec,
+            LINE_ID: machine?.LINE_ID || 'N/A',
+            DESCRIPTION: `This is a sample detailed description for the defect '${rec.DEFECT_TYPE}' found on machine ${rec.MACHINE_ID}. Further analysis may be required.`,
+            SEVERITY: index % 3 === 0 ? 'High' : index % 2 === 0 ? 'Medium' : 'Low',
+            DISCOVERED_BY: 'Auto-generated',
+            STATUS: index % 4 === 0 ? 'Closed' : index % 3 === 0 ? 'In Progress' : 'Open',
+            ROOT_CAUSE: index % 2 === 0 ? 'Operator error during setup.' : 'Material specification out of tolerance.',
+            CORRECTIVE_ACTION: 'Retrain operator on SOP-102.',
+            RESPONSIBLE_PERSON: 'Jane Doe',
+            DUE_DATE: '2025-11-15'
+        };
+    });
 }).reverse();
 
 // In-memory log for defect adjustments
@@ -92,17 +110,29 @@ export const getMachineInfo = (machineId: string): MachineInfo | null => {
 // Function to add new defect data
 export const addDefectData = (newData: NewProductionData) => {
     // Create a new DefectRecord
-    const newDefectId = Math.max(...defectRecords.map(d => d.Defect_ID)) + 1;
+    const newDefectId = Math.max(...defectRecords.map(d => d.Defect_ID), 0) + 1;
+    const machineInfo = getMachineInfo(newData.MACHINE_ID);
+
     const newDefect: DefectRecord = {
         Defect_ID: newDefectId,
         COMP_DAY: newData.COMP_DAY,
         MACHINE_ID: newData.MACHINE_ID,
+        LINE_ID: newData.LINE_ID,
+        SHIFT: newData.SHIFT,
+        ITEM_CODE: machineInfo?.MACHINE_NAME || 'Unknown',
         DEFECT_TYPE: newData.DEFECT_TYPE,
         DEFECT_QTY: newData.DEFECT_QTY,
-        SHIFT: newData.SHIFT,
-        ITEM_CODE: machineInfoData.find(m => m.MACHINE_ID === newData.MACHINE_ID)?.MACHINE_NAME || 'Unknown',
+        DESCRIPTION: newData.DESCRIPTION,
+        SEVERITY: newData.SEVERITY,
+        DISCOVERED_BY: newData.OPERATOR_NAME,
+        STATUS: newData.STATUS,
+        ROOT_CAUSE: newData.ROOT_CAUSE,
+        CORRECTIVE_ACTION: newData.CORRECTIVE_ACTION,
+        RESPONSIBLE_PERSON: newData.RESPONSIBLE_PERSON,
+        DUE_DATE: newData.DUE_DATE,
+        ATTACHMENT_URL: newData.ATTACHMENT_URL,
     };
-    defectRecords.push(newDefect);
+    defectRecords.unshift(newDefect); // Add to beginning for visibility
 
     // Find the corresponding production log and update the defect quantity
     const prodLog = productionDailyData.find(p =>
@@ -116,7 +146,7 @@ export const addDefectData = (newData: NewProductionData) => {
     } else {
         // If no production log exists, we might need to create a new one.
         // For simplicity, this example assumes a log for the day/machine/shift exists.
-        console.warn("No production log found for the new defect entry. A new log should be created.");
+        console.warn("No production log found for the new defect entry. Defect is logged, but daily summary might not update immediately.");
     }
 };
 

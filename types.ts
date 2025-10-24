@@ -42,10 +42,20 @@ export interface DefectRecord {
   Defect_ID: number;
   COMP_DAY: string; // YYYY-MM-DD
   MACHINE_ID: string;
-  DEFECT_TYPE: string;
+  DEFECT_TYPE: string; // Title
   DEFECT_QTY: number;
   SHIFT: 'A' | 'B' | 'C';
   ITEM_CODE: string;
+  LINE_ID: string;
+  DESCRIPTION: string;
+  SEVERITY: 'Low' | 'Medium' | 'High';
+  DISCOVERED_BY: string;
+  STATUS: 'Open' | 'In Progress' | 'Closed';
+  ROOT_CAUSE?: string;
+  CORRECTIVE_ACTION?: string;
+  RESPONSIBLE_PERSON?: string;
+  DUE_DATE?: string;
+  ATTACHMENT_URL?: string;
 }
 
 export interface OperatorInfo {
@@ -58,13 +68,26 @@ export interface OperatorInfo {
 
 // Updated NewProductionData for the defect entry form
 export interface NewProductionData {
+  // Existing fields
   MACHINE_ID: string;
   LINE_ID: string;
   SHIFT: 'A' | 'B' | 'C';
   DEFECT_QTY: number;
-  DEFECT_TYPE: string;
-  OPERATOR_NAME: string;
+  DEFECT_TYPE: string; // Title
+  OPERATOR_NAME: string; // Will be repurposed as DISCOVERED_BY
   COMP_DAY: string;
+  
+  // New mandatory fields
+  DESCRIPTION: string;
+  SEVERITY: 'Low' | 'Medium' | 'High';
+  STATUS: 'Open' | 'In Progress' | 'Closed';
+
+  // New optional fields
+  ROOT_CAUSE?: string;
+  CORRECTIVE_ACTION?: string;
+  RESPONSIBLE_PERSON?: string;
+  DUE_DATE?: string;
+  ATTACHMENT_URL?: string;
 }
 
 // New interface for logging manual defect adjustments

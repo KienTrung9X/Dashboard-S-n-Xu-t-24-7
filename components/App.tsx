@@ -38,7 +38,7 @@ const getInitialFilters = () => {
 
 type Tab = 'overview' | 'performance' | 'quality' | 'downtime';
 type Shift = 'all' | 'A' | 'B' | 'C';
-type DateSelectionMode = 'single' | 'range';
+type DateSelectionMode = 'single' | 'range' | 'last7' | 'last30';
 type NotificationType = 'success' | 'error' | 'info';
 type Theme = 'light' | 'dark';
 type MachineStatus = 'all' | 'active' | 'inactive';
@@ -59,6 +59,9 @@ const App: React.FC = () => {
   const abortRef = useRef<AbortController | null>(null);
 
   const [oeeThreshold, setOeeThreshold] = useState<number>(initialFilters?.oeeThreshold ?? 80);
+  const [availabilityThreshold, setAvailabilityThreshold] = useState<number>(initialFilters?.availabilityThreshold ?? 90);
+  const [performanceThreshold, setPerformanceThreshold] = useState<number>(initialFilters?.performanceThreshold ?? 95);
+  const [qualityThreshold, setQualityThreshold] = useState<number>(initialFilters?.qualityThreshold ?? 99);
   const [underperformingMachines, setUnderperformingMachines] = useState<string[]>([]);
   const [isAlertVisible, setIsAlertVisible] = useState(true);
   
@@ -158,12 +161,15 @@ const App: React.FC = () => {
         selectedShift,
         selectedStatus,
         oeeThreshold,
+        availabilityThreshold,
+        performanceThreshold,
+        qualityThreshold,
       };
       localStorage.setItem('manufacturingDashboardFilters', JSON.stringify(filtersToSave));
     } catch (e) {
       console.error("Failed to save filters to localStorage", e);
     }
-  }, [startDate, endDate, dateSelectionMode, selectedArea, selectedShift, selectedStatus, oeeThreshold]);
+  }, [startDate, endDate, dateSelectionMode, selectedArea, selectedShift, selectedStatus, oeeThreshold, availabilityThreshold, performanceThreshold, qualityThreshold]);
 
   // Effect to calculate underperforming machines
   useEffect(() => {
@@ -193,7 +199,7 @@ const App: React.FC = () => {
     setStartDate(filters.startDate);
     setEndDate(filters.endDate);
     setSelectedArea(filters.area);
-    setSelectedShift(filters.mode === 'range' ? 'all' : filters.shift);
+    setSelectedShift(filters.mode !== 'single' ? 'all' : filters.shift);
     setSelectedStatus(filters.status);
   };
 
@@ -205,7 +211,10 @@ const App: React.FC = () => {
     setSelectedArea(initialFilterData.defaultArea);
     setSelectedShift('all');
     setSelectedStatus('all');
-    setOeeThreshold(80); // Also reset threshold
+    setOeeThreshold(80);
+    setAvailabilityThreshold(90);
+    setPerformanceThreshold(95);
+    setQualityThreshold(99);
   };
   
   const handleMachineSelect = (machineId: string) => {
@@ -459,9 +468,10 @@ const App: React.FC = () => {
                             isPercentage={true}
                             theme={theme}
                             targetLines={[
-                                { value: 0.9, label: '90% A', stroke: '#0284c7' },
-                                { value: 0.9, label: '90% P', stroke: '#db2777' },
-                                { value: 0.9, label: '90% Q', stroke: '#7c3aed' },
+                                { value: oeeThreshold / 100, label: `Mục tiêu OEE ${oeeThreshold}%`, stroke: '#34d399' },
+                                { value: availabilityThreshold / 100, label: `Mục tiêu A ${availabilityThreshold}%`, stroke: '#38bdf8' },
+                                { value: performanceThreshold / 100, label: `Mục tiêu P ${performanceThreshold}%`, stroke: '#f472b6' },
+                                { value: qualityThreshold / 100, label: `Mục tiêu Q ${qualityThreshold}%`, stroke: '#a78bfa' },
                             ]}
                         />
                     </div>
@@ -609,9 +619,15 @@ const App: React.FC = () => {
         selectedStatus={selectedStatus}
         availableAreas={initialFilterData.availableAreas}
         oeeThreshold={oeeThreshold}
+        availabilityThreshold={availabilityThreshold}
+        performanceThreshold={performanceThreshold}
+        qualityThreshold={qualityThreshold}
         onFilterChange={handleFilterChange}
         onClearFilters={handleClearFilters}
-        onThresholdChange={setOeeThreshold}
+        onOeeThresholdChange={setOeeThreshold}
+        onAvailabilityThresholdChange={setAvailabilityThreshold}
+        onPerformanceThresholdChange={setPerformanceThreshold}
+        onQualityThresholdChange={setQualityThreshold}
       />
 
       <nav className="my-6 flex items-center gap-2 border-b border-gray-300 dark:border-gray-700 pb-2">

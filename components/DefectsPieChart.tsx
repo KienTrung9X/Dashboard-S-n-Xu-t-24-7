@@ -29,8 +29,11 @@ const DefectsPieChart: React.FC<DefectsPieChartProps> = ({ data }) => {
             outerRadius={100}
             fill="#8884d8"
             labelLine={false}
-            // FIX: Add explicit types to label props to prevent arithmetic errors on unknown types.
-            label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }: { cx: number, cy: number, midAngle: number, innerRadius: number, outerRadius: number, percent: number }) => {
+            // FIX: The provided type was too strict. Replaced with a compatible type ('any') that accepts optional properties from recharts and includes checks to prevent runtime errors.
+            label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+              if (cx === undefined || cy === undefined || midAngle === undefined || innerRadius === undefined || outerRadius === undefined || percent === undefined) {
+                return null;
+              }
               const radius = innerRadius + (outerRadius - innerRadius) * 1.2;
               const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
               const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));

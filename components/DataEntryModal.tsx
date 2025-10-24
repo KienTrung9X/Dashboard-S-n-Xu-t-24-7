@@ -12,195 +12,199 @@ interface DataEntryModalProps {
   uniqueDefectTypes: string[];
 }
 
-const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubmit, availableMachines, currentDate, uniqueDefectTypes }) => {
-  const [entryDate, setEntryDate] = useState(currentDate);
-  const [machineId, setMachineId] = useState(availableMachines[0]?.id || '');
-  const [shift, setShift] = useState<'A' | 'B' | 'C'>('A');
-  const [defectType, setDefectType] = useState('');
-  const [defectQty, setDefectQty] = useState('');
-  const [operatorName] = useState('Admin'); // Hardcoded to 'Admin'
-  const [error, setError] = useState('');
-  const [isConfirming, setIsConfirming] = useState(false);
+const formInputClass = "mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-800 dark:text-white focus:outline-none focus:ring-cyan-500 focus:border-cyan-500";
+const formLabelClass = "block text-sm font-medium text-gray-700 dark:text-gray-300";
 
-
-  const selectedMachine = useMemo(() => {
-    return availableMachines.find(m => m.id === machineId);
-  }, [machineId, availableMachines]);
-
-  // Reset form when modal opens
-  useEffect(() => {
-    if (isOpen) {
-        setEntryDate(currentDate);
-        setMachineId(availableMachines[0]?.id || '');
-        setShift('A');
-        setDefectType('');
-        setDefectQty('');
-        setError('');
-        setIsConfirming(false); // Reset to form view
-    }
-  }, [isOpen, availableMachines, currentDate]);
-
-  const handleReview = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    const defectNum = parseInt(defectQty, 10);
-    const trimmedDefectType = defectType.trim();
-
-    if (!machineId || !selectedMachine) {
-      setError('Please select a valid machine.');
-      return;
-    }
-    if (!trimmedDefectType) {
-        setError('Defect Name is required.');
-        return;
-    }
-    if (isNaN(defectNum) || defectNum <= 0) {
-      setError('Defect quantity must be a positive number.');
-      return;
-    }
-
-    // Move to confirmation view
-    setIsConfirming(true);
-  };
-
-  const handleFinalSubmit = () => {
-      const defectNum = parseInt(defectQty, 10);
-      
-      onSubmit({
-        MACHINE_ID: machineId,
-        LINE_ID: selectedMachine!.line,
-        SHIFT: shift,
-        DEFECT_QTY: defectNum,
-        DEFECT_TYPE: defectType.trim(),
-        OPERATOR_NAME: operatorName,
-        COMP_DAY: entryDate,
-      });
-  };
-  
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={handleBackdropClick}>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md text-gray-900 dark:text-white animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
-        <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-2xl font-bold">{isConfirming ? 'Confirm Your Entry' : 'Nhập Dữ Liệu Lỗi'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors" aria-label="Close modal">
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </header>
-
-        {isConfirming ? (
-          <main className="p-6 space-y-3">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Please review the information below before submitting.</p>
-            <div className="bg-gray-100 dark:bg-gray-700/50 p-4 rounded-lg space-y-2 text-gray-700 dark:text-gray-200">
-                <div className="flex justify-between"><span>Date:</span> <span className="font-semibold">{entryDate}</span></div>
-                <div className="flex justify-between"><span>Machine:</span> <span className="font-semibold">{machineId} (Line {selectedMachine?.line})</span></div>
-                <div className="flex justify-between"><span>Shift:</span> <span className="font-semibold">Ca {shift}</span></div>
-                <div className="flex justify-between"><span>Defect Name:</span> <span className="font-semibold">{defectType}</span></div>
-                <div className="flex justify-between"><span>Quantity:</span> <span className="font-semibold">{defectQty} pcs</span></div>
-                <div className="flex justify-between"><span>Entered By:</span> <span className="font-semibold">{operatorName}</span></div>
-            </div>
-          </main>
-        ) : (
-          <form id="data-entry-form" onSubmit={handleReview}>
-            <main className="p-6 space-y-4">
-              {error && <div className="bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-500 text-red-700 dark:text-red-300 px-4 py-3 rounded-md mb-4" role="alert">{error}</div>}
-              
-              <div className="grid grid-cols-2 gap-4">
-                  <div>
-                      <label htmlFor="entryDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Ngày (Date)</label>
-                      <input 
-                          type="date" 
-                          id="entryDate" 
-                          value={entryDate} 
-                          onChange={e => setEntryDate(e.target.value)} 
-                          className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-800 dark:text-white focus:outline-none focus:ring-cyan-500 focus:border-cyan-500" 
-                          required 
-                      />
-                  </div>
-                  <div>
-                      <label htmlFor="shift" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Ca (Shift)</label>
-                      <select id="shift" value={shift} onChange={e => setShift(e.target.value as 'A' | 'B' | 'C')} className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-800 dark:text-white focus:outline-none focus:ring-cyan-500 focus:border-cyan-500">
-                          <option value="A">Ca A</option>
-                          <option value="B">Ca B</option>
-                          <option value="C">Ca C</option>
-                      </select>
-                  </div>
-              </div>
-
-              <div>
-                  <label htmlFor="machineId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Máy (Machine)</label>
-                  <select id="machineId" value={machineId} onChange={e => setMachineId(e.target.value)} className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-800 dark:text-white focus:outline-none focus:ring-cyan-500 focus:border-cyan-500">
-                      {availableMachines.map(m => <option key={m.id} value={m.id}>{m.id} (Line {m.line})</option>)}
-                  </select>
-              </div>
-
-               <div>
-                  <label htmlFor="defectType" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Loại Lỗi (Defect Name)</label>
-                   <div className="relative mt-1">
-                      <input 
-                        type="text" 
-                        id="defectType" 
-                        value={defectType} 
-                        onChange={e => setDefectType(e.target.value)} 
-                        className="block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-800 dark:text-white focus:outline-none focus:ring-cyan-500 focus:border-cyan-500" 
-                        required 
-                        list="defect-types-datalist"
-                        placeholder="e.g., Skip stitch"
-                      />
-                      <datalist id="defect-types-datalist">
-                          {uniqueDefectTypes.map(type => <option key={type} value={type} />)}
-                      </datalist>
-                  </div>
-                </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                  <label htmlFor="defectQty" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Số Lượng Lỗi (pcs)</label>
-                  <input type="number" id="defectQty" value={defectQty} onChange={e => setDefectQty(e.target.value)} min="1" className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-800 dark:text-white focus:outline-none focus:ring-cyan-500 focus:border-cyan-500" required />
-                </div>
-                 <div>
-                  <label htmlFor="operatorName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Người Nhập (Entered By)</label>
-                  <input type="text" id="operatorName" value={operatorName} className="mt-1 block w-full bg-gray-200 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-gray-500 dark:text-gray-400 focus:outline-none cursor-not-allowed" disabled readOnly />
-                </div>
-              </div>
-            </main>
-          </form>
-        )}
-        
-        <footer className="px-6 py-4 bg-gray-50 dark:bg-gray-900/50 flex justify-end gap-3 mt-auto">
-          {isConfirming ? (
-            <>
-              <button type="button" onClick={() => setIsConfirming(false)} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white font-bold py-2 px-6 rounded-lg shadow-md transition-colors">
-                Go Back
-              </button>
-              <button type="button" onClick={handleFinalSubmit} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105">
-                Confirm Submission
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={onClose} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white font-bold py-2 px-6 rounded-lg shadow-md transition-colors">
-                Hủy
-              </button>
-              <button type="submit" form="data-entry-form" className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105">
-                Review & Submit
-              </button>
-            </>
-          )}
-        </footer>
-      </div>
+const FormField: React.FC<{ label: string; id: string; required?: boolean; children: React.ReactNode }> = ({ label, id, required, children }) => (
+    <div>
+        <label htmlFor={id} className={formLabelClass}>
+            {label} {required && <span className="text-red-500">*</span>}
+        </label>
+        {children}
     </div>
-  );
+);
+
+
+const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubmit, availableMachines, currentDate, uniqueDefectTypes }) => {
+    
+    const getInitialState = () => ({
+        COMP_DAY: currentDate,
+        MACHINE_ID: availableMachines[0]?.id || '',
+        LINE_ID: availableMachines[0]?.line || '',
+        SHIFT: 'A' as 'A' | 'B' | 'C',
+        DEFECT_TYPE: '',
+        DEFECT_QTY: '',
+        OPERATOR_NAME: 'Admin', // Hardcoded "Discoverer"
+        DESCRIPTION: '',
+        SEVERITY: 'Medium' as 'Low' | 'Medium' | 'High',
+        STATUS: 'Open' as 'Open' | 'In Progress' | 'Closed',
+        ROOT_CAUSE: '',
+        CORRECTIVE_ACTION: '',
+        RESPONSIBLE_PERSON: '',
+        DUE_DATE: '',
+        ATTACHMENT_URL: '',
+    });
+
+    const [formData, setFormData] = useState(getInitialState());
+    const [error, setError] = useState('');
+    const [isConfirming, setIsConfirming] = useState(false);
+
+    const selectedMachine = useMemo(() => {
+        return availableMachines.find(m => m.id === formData.MACHINE_ID);
+    }, [formData.MACHINE_ID, availableMachines]);
+
+    // Reset form when modal opens or dependencies change
+    useEffect(() => {
+        if (isOpen) {
+            setFormData(getInitialState());
+            setError('');
+            setIsConfirming(false);
+        }
+    }, [isOpen, availableMachines, currentDate]);
+    
+    // Update LINE_ID when MACHINE_ID changes
+    useEffect(() => {
+        if (selectedMachine) {
+            setFormData(prev => ({...prev, LINE_ID: selectedMachine.line}));
+        }
+    }, [selectedMachine]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleReview = (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+
+        const defectNum = parseInt(formData.DEFECT_QTY, 10);
+        
+        // Mandatory field validation
+        if (!formData.MACHINE_ID || !selectedMachine) { setError('Please select a valid machine.'); return; }
+        if (!formData.DEFECT_TYPE.trim()) { setError('Defect Title is required.'); return; }
+        if (!formData.DESCRIPTION.trim()) { setError('Detailed Description is required.'); return; }
+        if (isNaN(defectNum) || defectNum <= 0) { setError('Defect quantity must be a positive number.'); return; }
+
+        setIsConfirming(true);
+    };
+
+    const handleFinalSubmit = () => {
+        onSubmit({
+            ...formData,
+            DEFECT_QTY: parseInt(formData.DEFECT_QTY, 10),
+        });
+    };
+
+    const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget) onClose();
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={handleBackdropClick}>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl text-gray-900 dark:text-white animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
+                <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                    <h2 className="text-2xl font-bold">{isConfirming ? 'Confirm Defect Report' : 'Báo Cáo Lỗi Chi Tiết'}</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors" aria-label="Close modal">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </header>
+
+                {isConfirming ? (
+                    <main className="p-6 space-y-3 max-h-[70vh] overflow-y-auto">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Please review the information below before submitting.</p>
+                        <div className="bg-gray-100 dark:bg-gray-700/50 p-4 rounded-lg space-y-2 text-gray-700 dark:text-gray-200 text-sm">
+                            <div className="flex justify-between"><span>Date:</span> <span className="font-semibold">{formData.COMP_DAY}</span></div>
+                            <div className="flex justify-between"><span>Machine:</span> <span className="font-semibold">{formData.MACHINE_ID} (Line {formData.LINE_ID})</span></div>
+                            <div className="flex justify-between"><span>Shift:</span> <span className="font-semibold">Ca {formData.SHIFT}</span></div>
+                            <div className="flex justify-between"><span>Status:</span> <span className="font-semibold">{formData.STATUS}</span></div>
+                            <hr className="border-gray-300 dark:border-gray-600 my-2" />
+                            <div className="flex justify-between"><span>Defect Title:</span> <span className="font-semibold">{formData.DEFECT_TYPE}</span></div>
+                            <div className="flex justify-between"><span>Severity:</span> <span className="font-semibold">{formData.SEVERITY}</span></div>
+                            <div className="flex justify-between"><span>Quantity:</span> <span className="font-semibold">{formData.DEFECT_QTY} pcs</span></div>
+                            <div><span className="block">Description:</span> <p className="font-semibold whitespace-pre-wrap pl-2">{formData.DESCRIPTION}</p></div>
+                             <hr className="border-gray-300 dark:border-gray-600 my-2" />
+                            <div className="flex justify-between"><span>Root Cause:</span> <span className="font-semibold">{formData.ROOT_CAUSE || 'N/A'}</span></div>
+                            <div className="flex justify-between"><span>Corrective Action:</span> <span className="font-semibold">{formData.CORRECTIVE_ACTION || 'N/A'}</span></div>
+                            <div className="flex justify-between"><span>Responsible:</span> <span className="font-semibold">{formData.RESPONSIBLE_PERSON || 'N/A'}</span></div>
+                            <div className="flex justify-between"><span>Due Date:</span> <span className="font-semibold">{formData.DUE_DATE || 'N/A'}</span></div>
+                             <hr className="border-gray-300 dark:border-gray-600 my-2" />
+                            <div className="flex justify-between"><span>Attachment URL:</span> <span className="font-semibold">{formData.ATTACHMENT_URL || 'N/A'}</span></div>
+                            <div className="flex justify-between"><span>Discovered By:</span> <span className="font-semibold">{formData.OPERATOR_NAME}</span></div>
+                        </div>
+                    </main>
+                ) : (
+                    <form id="data-entry-form" onSubmit={handleReview}>
+                        <main className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                            {error && <div className="bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-500 text-red-700 dark:text-red-300 px-4 py-3 rounded-md" role="alert">{error}</div>}
+                            
+                            <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-4 border dark:border-gray-600 p-4 rounded-md">
+                                <legend className="px-2 font-semibold text-cyan-500 dark:text-cyan-400">Thông tin chung (General Info)</legend>
+                                <FormField label="Ngày (Date)" id="COMP_DAY" required><input type="date" name="COMP_DAY" id="COMP_DAY" value={formData.COMP_DAY} onChange={handleChange} className={formInputClass} required /></FormField>
+                                <FormField label="Ca (Shift)" id="SHIFT" required>
+                                    <select name="SHIFT" id="SHIFT" value={formData.SHIFT} onChange={handleChange} className={formInputClass}>
+                                        <option value="A">Ca A</option><option value="B">Ca B</option><option value="C">Ca C</option>
+                                    </select>
+                                </FormField>
+                                <FormField label="Máy (Machine)" id="MACHINE_ID" required>
+                                    <select name="MACHINE_ID" id="MACHINE_ID" value={formData.MACHINE_ID} onChange={handleChange} className={formInputClass}>
+                                        {availableMachines.map(m => <option key={m.id} value={m.id}>{m.id} (Line {m.line})</option>)}
+                                    </select>
+                                </FormField>
+                                <FormField label="Trạng thái (Status)" id="STATUS" required>
+                                    <select name="STATUS" id="STATUS" value={formData.STATUS} onChange={handleChange} className={formInputClass}>
+                                        <option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Closed">Closed</option>
+                                    </select>
+                                </FormField>
+                            </fieldset>
+
+                             <fieldset className="grid grid-cols-1 gap-4 border dark:border-gray-600 p-4 rounded-md">
+                                <legend className="px-2 font-semibold text-cyan-500 dark:text-cyan-400">Mô tả lỗi (Defect Details)</legend>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                     <FormField label="Tiêu đề lỗi (Defect Title)" id="DEFECT_TYPE" required>
+                                        <div className="relative mt-1"><input type="text" name="DEFECT_TYPE" id="DEFECT_TYPE" value={formData.DEFECT_TYPE} onChange={handleChange} className={formInputClass} required list="defect-types-datalist" placeholder="e.g., Skip stitch" /></div>
+                                        <datalist id="defect-types-datalist">{uniqueDefectTypes.map(type => <option key={type} value={type} />)}</datalist>
+                                     </FormField>
+                                     <FormField label="Số lượng lỗi (pcs)" id="DEFECT_QTY" required><input type="number" name="DEFECT_QTY" id="DEFECT_QTY" value={formData.DEFECT_QTY} onChange={handleChange} min="1" className={formInputClass} required /></FormField>
+                                     <FormField label="Mức độ (Severity)" id="SEVERITY" required>
+                                        <select name="SEVERITY" id="SEVERITY" value={formData.SEVERITY} onChange={handleChange} className={formInputClass}>
+                                            <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option>
+                                        </select>
+                                     </FormField>
+                                </div>
+                                 <FormField label="Mô tả chi tiết (Detailed Description)" id="DESCRIPTION" required><textarea name="DESCRIPTION" id="DESCRIPTION" value={formData.DESCRIPTION} onChange={handleChange} rows={3} className={formInputClass} required placeholder="Describe what is wrong, where it is, and when it occurred..."></textarea></FormField>
+                            </fieldset>
+
+                             <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-4 border dark:border-gray-600 p-4 rounded-md">
+                                <legend className="px-2 font-semibold text-cyan-500 dark:text-cyan-400">Phân tích & Khắc phục (Analysis & Action)</legend>
+                                <div className="md:col-span-2"><FormField label="Phân tích Nguyên nhân (Root Cause Analysis)" id="ROOT_CAUSE"><textarea name="ROOT_CAUSE" id="ROOT_CAUSE" value={formData.ROOT_CAUSE} onChange={handleChange} rows={2} className={formInputClass}></textarea></FormField></div>
+                                <div className="md:col-span-2"><FormField label="Hành động Khắc phục/Phòng ngừa (Corrective/Preventive Action)" id="CORRECTIVE_ACTION"><textarea name="CORRECTIVE_ACTION" id="CORRECTIVE_ACTION" value={formData.CORRECTIVE_ACTION} onChange={handleChange} rows={2} className={formInputClass}></textarea></FormField></div>
+                                <FormField label="Người chịu trách nhiệm (Responsible Person)" id="RESPONSIBLE_PERSON"><input type="text" name="RESPONSIBLE_PERSON" id="RESPONSIBLE_PERSON" value={formData.RESPONSIBLE_PERSON} onChange={handleChange} className={formInputClass} /></FormField>
+                                <FormField label="Thời hạn hoàn thành (Due Date)" id="DUE_DATE"><input type="date" name="DUE_DATE" id="DUE_DATE" value={formData.DUE_DATE} onChange={handleChange} className={formInputClass} /></FormField>
+                                <div className="md:col-span-2"><FormField label="Đính kèm (Attachment URL)" id="ATTACHMENT_URL"><input type="url" name="ATTACHMENT_URL" id="ATTACHMENT_URL" value={formData.ATTACHMENT_URL} onChange={handleChange} className={formInputClass} placeholder="https://example.com/image.png" /></FormField></div>
+                            </fieldset>
+                        </main>
+                    </form>
+                )}
+
+                <footer className="px-6 py-4 bg-gray-50 dark:bg-gray-900/50 flex justify-end gap-3 mt-auto">
+                    {isConfirming ? (
+                        <>
+                            <button type="button" onClick={() => setIsConfirming(false)} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white font-bold py-2 px-6 rounded-lg shadow-md transition-colors">Go Back</button>
+                            <button type="button" onClick={handleFinalSubmit} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105">Confirm Submission</button>
+                        </>
+                    ) : (
+                        <>
+                            <button type="button" onClick={onClose} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white font-bold py-2 px-6 rounded-lg shadow-md transition-colors">Hủy</button>
+                            <button type="submit" form="data-entry-form" className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105">Review & Submit</button>
+                        </>
+                    )}
+                </footer>
+            </div>
+        </div>
+    );
 };
 
 export default DataEntryModal;
