@@ -1,7 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+
+import React from 'react';
 import { MachineInfo, DowntimeRecord, ProductionDaily, DefectAdjustmentLog, DataPoint } from '../types';
 import SimplePieChart from './SimplePieChart';
+import { useMemo, useState, useEffect } from 'react';
 
 interface MachineDetailsModalProps {
   isOpen: boolean;
@@ -77,15 +79,48 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
       return [];
     }
 
-    const downtimeByReason = downtimeRecords.reduce((acc: Record<string, number>, record) => {
+    // FIX: Explicitly typing `downtimeByReason` ensures that `Object.entries` correctly infers
+    // the value as a number, resolving downstream type errors in `map` and `sort`.
+    const downtimeByReason: Record<string, number> = downtimeRecords.reduce((acc, record) => {
       acc[record.DOWNTIME_REASON] = (acc[record.DOWNTIME_REASON] || 0) + record.DOWNTIME_MIN;
       return acc;
-    }, {});
+    }, {} as Record<string, number>);
 
     return Object.entries(downtimeByReason)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [downtimeRecords]);
+
+  const sortedDowntime = useMemo(() => {
+    return [...downtimeRecords].sort((a, b) => {
+        const dateComparison = b.COMP_DAY.localeCompare(a.COMP_DAY);
+        if (dateComparison !== 0) return dateComparison;
+        return b.START_TIME.localeCompare(a.START_TIME);
+    }).slice(0, 10);
+  }, [downtimeRecords]);
+
+  const calculateDuration = (start: string, end: string, compDay: string): number => {
+    if (!start || !end || !start.includes(':') || !end.includes(':')) {
+        return 0; // Return 0 if times are invalid
+    }
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+
+    if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) {
+        return 0; // Return 0 if parsing fails
+    }
+
+    const startDate = new Date(`${compDay}T${start}:00`);
+    let endDate = new Date(`${compDay}T${end}:00`);
+    
+    // Handle overnight downtime
+    if (endDate.getTime() <= startDate.getTime()) {
+        endDate.setDate(endDate.getDate() + 1);
+    }
+    
+    const diffMs = endDate.getTime() - startDate.getTime();
+    return Math.round(diffMs / 60000); // convert ms to minutes
+  };
   
   if (!isOpen) return null;
 
@@ -150,7 +185,48 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
               </Card>
 
               <Card title="Downtime Analysis">
-                  <SimplePieChart data={downtimeChartData} theme={theme} />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+                    <div className="min-h-[300px]">
+                        <SimplePieChart data={downtimeChartData} theme={theme} />
+                    </div>
+                    <div className="overflow-y-auto max-h-72 border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 pt-4 lg:pt-0 lg:pl-4">
+                      <h4 className="text-md font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          Recent Downtime Events
+                          {downtimeRecords.length > 10 && <span className="text-xs font-normal text-gray-400"> (showing 10 of {downtimeRecords.length})</span>}
+                      </h4>
+                      {sortedDowntime.length > 0 ? (
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-gray-100 dark:bg-gray-700/50 sticky top-0">
+                            <tr>
+                              <th className="p-2 text-left font-semibold">Date</th>
+                              <th className="p-2 text-left font-semibold">Reason</th>
+                              <th className="p-2 text-left font-semibold">Start Time</th>
+                              <th className="p-2 text-left font-semibold">End Time</th>
+                              <th className="p-2 text-right font-semibold">Total Duration</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {sortedDowntime.map(log => {
+                              const duration = calculateDuration(log.START_TIME, log.END_TIME, log.COMP_DAY);
+                              return (
+                                <tr key={log.Downtime_ID}>
+                                  <td className="p-2 whitespace-nowrap">{log.COMP_DAY}</td>
+                                  <td className="p-2">{log.DOWNTIME_REASON}</td>
+                                  <td className="p-2">{log.START_TIME}</td>
+                                  <td className="p-2">{log.END_TIME}</td>
+                                  <td className="p-2 text-right whitespace-nowrap">{duration} min</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                            No downtime events recorded.
+                        </div>
+                      )}
+                    </div>
+                  </div>
               </Card>
 
               <Card title="Defect Adjustment History">

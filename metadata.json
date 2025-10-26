@@ -1,5 +1,5 @@
 {
-  "name": "Manufacturing OEE Dashboard",
+  "name": "Manufacturing OEE Dashboard Done",
   "description": "A comprehensive dashboard for visualizing 24/7 manufacturing production data, focusing on Overall Equipment Effectiveness (OEE), downtime, and quality metrics based on a provided database schema.",
   "requestFramePermissions": []
 }

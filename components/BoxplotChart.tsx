@@ -25,15 +25,15 @@ const Box = (props: any) => {
     return (
         <g>
             {/* Box (Q1 to Q3) */}
-            <rect x={x} y={q3Coord} width={width} height={q1Coord - q3Coord} fill="#6366f1" stroke="#a78bfa" strokeWidth={1} />
+            <rect x={x} y={q3Coord} width={width} height={q1Coord - q3Coord} fill="#06b6d4" stroke="#0891b2" strokeWidth={1} />
             
             {/* Whiskers */}
-            <line x1={cx} y1={maxYCoord} x2={cx} y2={q3Coord} stroke="#a78bfa" strokeWidth={2} />
-            <line x1={cx} y1={q1Coord} x2={cx} y2={minYCoord} stroke="#a78bfa" strokeWidth={2} />
+            <line x1={cx} y1={maxYCoord} x2={cx} y2={q3Coord} stroke="#0891b2" strokeWidth={2} />
+            <line x1={cx} y1={q1Coord} x2={cx} y2={minYCoord} stroke="#0891b2" strokeWidth={2} />
 
             {/* Top and Bottom T-bars of whiskers */}
-            <line x1={cx - 5} y1={maxYCoord} x2={cx + 5} y2={maxYCoord} stroke="#a78bfa" strokeWidth={2} />
-            <line x1={cx - 5} y1={minYCoord} x2={cx + 5} y2={minYCoord} stroke="#a78bfa" strokeWidth={2} />
+            <line x1={cx - 5} y1={maxYCoord} x2={cx + 5} y2={maxYCoord} stroke="#0891b2" strokeWidth={2} />
+            <line x1={cx - 5} y1={minYCoord} x2={cx + 5} y2={minYCoord} stroke="#0891b2" strokeWidth={2} />
 
             {/* Median Line */}
             <line x1={x} y1={medianCoord} x2={x + width} y2={medianCoord} stroke="#ffffff" strokeWidth={2} />
@@ -68,7 +68,7 @@ const BoxplotChart: React.FC<BoxplotChartProps> = ({ data, theme = 'light' }) =>
                         tickFormatter={(val) => val.toLocaleString()}
                     />
                     <Tooltip
-                        cursor={{fill: theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'}}
+                        cursor={{fill: 'rgba(6, 182, 212, 0.1)'}}
                         contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}
                         labelStyle={{ color: '#f9fafb', fontWeight: 'bold' }}
                         formatter={(value, name, props) => [null, null]} // Disable default formatter

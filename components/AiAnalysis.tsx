@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { DashboardData } from '../types';
@@ -66,7 +67,7 @@ const AiAnalysis: React.FC<AiAnalysisProps> = ({ data, filters }) => {
                 ${JSON.stringify(dataSummary, null, 2)}
 
                 Yêu cầu phân tích:
-                1.  Tóm tắt tổng quan về OEE và sản lượng.
+                1.  Tóm tắt tổng quan về OEE, tỷ lệ sử dụng máy (machine utilization), và sản lượng.
                 2.  Chỉ ra yếu tố lớn nhất ảnh hưởng tiêu cực đến hiệu suất (dựa trên thời gian dừng máy hoặc loại lỗi nổi bật nhất).
                 3.  Nêu một điểm sáng, khu vực hoạt động tốt.
                 4.  Đưa ra một đề xuất cụ thể để cải thiện.

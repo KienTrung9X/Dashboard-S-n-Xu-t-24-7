@@ -63,7 +63,6 @@ export let defectRecords: DefectRecord[] = Array.from({ length: 30 }).flatMap((_
     const date = new Date('2025-10-30');
     date.setDate(date.getDate() - i);
     const dateString = date.toISOString().slice(0, 10);
-    // FIX: Add `as const` to preserve the literal types of the SHIFT property, preventing it from being widened to `string`.
     const mockRecords = [
         { Defect_ID: i * 6 + 1, COMP_DAY: dateString, MACHINE_ID: 'M01', DEFECT_TYPE: 'Skip stitch', DEFECT_QTY: 85 - i * 5, SHIFT: 'B', ITEM_CODE: '05CITape' },
         { Defect_ID: i * 6 + 2, COMP_DAY: dateString, MACHINE_ID: 'M01', DEFECT_TYPE: 'Tape jam', DEFECT_QTY: 40 + i * 2, SHIFT: 'C', ITEM_CODE: '05CITape' },
@@ -73,12 +72,13 @@ export let defectRecords: DefectRecord[] = Array.from({ length: 30 }).flatMap((_
         { Defect_ID: i * 6 + 6, COMP_DAY: dateString, MACHINE_ID: 'M05', DEFECT_TYPE: 'Scratch', DEFECT_QTY: 40, SHIFT: 'C', ITEM_CODE: 'Panel_B' },
         { Defect_ID: i * 6 + 7, COMP_DAY: dateString, MACHINE_ID: 'M06', DEFECT_TYPE: 'Packaging', DEFECT_QTY: 100 - i * 3, SHIFT: 'B', ITEM_CODE: 'Final Assy' },
     ] as const;
-    // Add new detailed fields to mock data
+    
     return mockRecords.map((rec, index) => {
         const machine = machineInfoData.find(m => m.MACHINE_ID === rec.MACHINE_ID);
         return {
             ...rec,
             LINE_ID: machine?.LINE_ID || 'N/A',
+            DEFECT_CATEGORY: 'Abnormal',
             DESCRIPTION: `This is a sample detailed description for the defect '${rec.DEFECT_TYPE}' found on machine ${rec.MACHINE_ID}. Further analysis may be required.`,
             SEVERITY: index % 3 === 0 ? 'High' : index % 2 === 0 ? 'Medium' : 'Low',
             DISCOVERED_BY: 'Auto-generated',
@@ -86,7 +86,8 @@ export let defectRecords: DefectRecord[] = Array.from({ length: 30 }).flatMap((_
             ROOT_CAUSE: index % 2 === 0 ? 'Operator error during setup.' : 'Material specification out of tolerance.',
             CORRECTIVE_ACTION: 'Retrain operator on SOP-102.',
             RESPONSIBLE_PERSON: 'Jane Doe',
-            DUE_DATE: '2025-11-15'
+            DUE_DATE: '2025-11-15',
+            ATTACHMENT_URL: undefined,
         };
     });
 }).reverse();
@@ -122,6 +123,7 @@ export const addDefectData = (newData: NewProductionData) => {
         ITEM_CODE: machineInfo?.MACHINE_NAME || 'Unknown',
         DEFECT_TYPE: newData.DEFECT_TYPE,
         DEFECT_QTY: newData.DEFECT_QTY,
+        DEFECT_CATEGORY: newData.DEFECT_CATEGORY,
         DESCRIPTION: newData.DESCRIPTION,
         SEVERITY: newData.SEVERITY,
         DISCOVERED_BY: newData.OPERATOR_NAME,
@@ -150,28 +152,33 @@ export const addDefectData = (newData: NewProductionData) => {
     }
 };
 
+// Logs a defect quantity adjustment.
+const addDefectAdjustmentLog = (prodId: number, machineId: string, previousValue: number, newValue: number) => {
+    const newLog: DefectAdjustmentLog = {
+        logId: defectAdjustmentLogs.length + 1,
+        prodId: prodId,
+        machineId: machineId,
+        timestamp: new Date().toISOString(),
+        previousValue: previousValue,
+        newValue: newValue,
+        user: 'Admin', // In a real app, this would be the logged-in user
+    };
+    defectAdjustmentLogs.push(newLog);
+};
+
 // Function to update defect quantity in the production log
 export const updateDefectQuantity = (prodId: number, newQty: number): { success: boolean; message: string } => {
     const record = productionDailyData.find(p => p.Prod_ID === prodId);
     if (!record) {
-        return { success: false, message: 'Record not found.' };
+        return { success: false, message: 'Không tìm thấy bản ghi.' };
     }
     const previousValue = record.DEFECT_QTY;
     record.DEFECT_QTY = newQty;
 
-    // Log the adjustment
-    const newLog: DefectAdjustmentLog = {
-        logId: defectAdjustmentLogs.length + 1,
-        prodId: prodId,
-        machineId: record.MACHINE_ID,
-        timestamp: new Date().toISOString(),
-        previousValue: previousValue,
-        newValue: newQty,
-        user: 'Admin', // In a real app, this would be the logged-in user
-    };
-    defectAdjustmentLogs.push(newLog);
+    // Log the adjustment by calling the new function
+    addDefectAdjustmentLog(prodId, record.MACHINE_ID, previousValue, newQty);
 
-    return { success: true, message: `Defects for machine ${record.MACHINE_ID} updated successfully.` };
+    return { success: true, message: `Cập nhật phế phẩm cho máy ${record.MACHINE_ID} thành công.` };
 };
 
 // Function to get the adjustment history for a machine
@@ -190,12 +197,6 @@ export const getDashboardData = (
 ): Promise<DashboardData> => {
     return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
-            // Simulate potential failure
-            if (Math.random() > 0.9) { // 10% chance of failure
-                reject(new Error("A random network error occurred. Please try again."));
-                return;
-            }
-
             try {
                  // Determine which machines to include based on status
                 const allowedMachineIdsByStatus = new Set(
@@ -237,12 +238,19 @@ export const getDashboardData = (
                 const totalDowntime = filteredProduction.reduce((sum, p) => sum + p.DOWNTIME_MIN, 0);
                 const totalRuntime = filteredProduction.reduce((sum, p) => sum + p.RUN_TIME_MIN, 0);
 
+                // --- Machine Utilization Calculation ---
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                const numberOfDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1;
+                const totalAvailableTime = machineIdsInFilter.length * numberOfDays * 24 * 60;
+                const machineUtilization = totalAvailableTime > 0 ? totalRuntime / totalAvailableTime : 0;
+
                 const avgOee = filteredProduction.length ? filteredProduction.reduce((sum, p) => sum + p.OEE, 0) / filteredProduction.length : 0;
                 
                 const goodParts = totalProduction - totalDefects;
                 const quality = totalProduction > 0 ? goodParts / totalProduction : 0;
                 const availability = (totalRuntime + totalDowntime) > 0 ? totalRuntime / (totalRuntime + totalDowntime) : 0;
-                const performance = totalProduction > 0 && totalRuntime > 0 ? (totalProduction * Math.min(...filteredProduction.map(p => p.IDEAL_CYCLE_TIME))) / totalRuntime : 0;
+                const performance = totalProduction > 0 && totalRuntime > 0 && filteredProduction.length > 0 ? (totalProduction * Math.min(...filteredProduction.map(p => p.IDEAL_CYCLE_TIME))) / totalRuntime : 0;
                 
                 // Summary charts
                 const productionByLine: DataPoint[] = Object.entries(
@@ -346,6 +354,11 @@ export const getDashboardData = (
                     date,
                     defectRate: dailyAggregates[date].prodSum > 0 ? dailyAggregates[date].defectSum / dailyAggregates[date].prodSum : 0,
                 }));
+                
+                const defectTrend: TrendData[] = sortedDates.map(date => ({
+                    date,
+                    totalDefects: dailyAggregates[date].defectSum,
+                }));
 
                 const downtimeTrend: TrendData[] = sortedDates.map(date => ({
                     date,
@@ -417,7 +430,7 @@ export const getDashboardData = (
                         totalProduction,
                         totalDefects,
                         totalDowntime,
-                        machineUtilization: 0.8, // placeholder
+                        machineUtilization,
                         avgOee,
                         avgAvailability: availability,
                         avgPerformance: performance,
@@ -433,6 +446,7 @@ export const getDashboardData = (
                     quality: {
                        defectPareto,
                        defectRateTrend,
+                       defectTrend,
                        top5DefectLines,
                     },
                     downtime: {

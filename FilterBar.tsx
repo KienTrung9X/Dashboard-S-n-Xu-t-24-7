@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useRef, useEffect } from 'react';
 
 type Shift = 'all' | 'A' | 'B' | 'C';
-type DateSelectionMode = 'single' | 'range' | 'last7' | 'last30';
+type DateSelectionMode = 'single' | 'range' | 'last7' | 'lastWeek' | 'last30';
 type MachineStatus = 'all' | 'active' | 'inactive';
 
 const ThresholdInput: React.FC<{
@@ -28,6 +28,21 @@ const ThresholdInput: React.FC<{
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">%</span>
         </div>
     </div>
+);
+
+// New reusable component for filter fields to improve structure and readability
+const FilterField: React.FC<{
+  label: string;
+  htmlFor: string;
+  children: React.ReactNode;
+  className?: string;
+}> = ({ label, htmlFor, children, className = '' }) => (
+  <div className={className}>
+    <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+      {label}
+    </label>
+    {children}
+  </div>
 );
 
 interface FilterBarProps {
@@ -76,51 +91,55 @@ const FilterBar: React.FC<FilterBarProps> = ({
   onPerformanceThresholdChange,
   onQualityThresholdChange,
 }) => {
-  const [areaSearch, setAreaSearch] = useState('');
+  const lastCustomRangeRef = useRef<{ start: string; end: string }>({ start: startDate, end: endDate });
+  const lastSingleDateRef = useRef<string>(startDate);
 
-  const filteredAreas = useMemo(() => {
-    const lowercasedSearch = areaSearch.toLowerCase();
-    
-    // Separate 'all' from other areas
-    const otherAreas = availableAreas.filter(area => area !== 'all');
-
-    // Filter the other areas
-    let filtered = otherAreas.filter(area =>
-        area.toLowerCase().includes(lowercasedSearch)
-    );
-
-    // Ensure the currently selected area is always visible if it's not 'all'
-    if (selectedArea !== 'all' && !filtered.includes(selectedArea)) {
-        const selectedAreaFromSource = availableAreas.find(a => a === selectedArea);
-        if (selectedAreaFromSource) {
-            filtered.push(selectedAreaFromSource);
-        }
+  useEffect(() => {
+    if (dateSelectionMode === 'range') {
+      lastCustomRangeRef.current = { start: startDate, end: endDate };
+    } else if (dateSelectionMode === 'single') {
+      lastSingleDateRef.current = startDate;
     }
-    
-    // Sort the filtered list
-    filtered.sort();
-    
-    // Always prepend the 'all' option
-    return ['all', ...filtered];
-  }, [areaSearch, availableAreas, selectedArea]);
+  }, [startDate, endDate, dateSelectionMode]);
+  
+  const formInputClass = "w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-70 disabled:cursor-not-allowed";
 
   const handleModeChange = (mode: DateSelectionMode) => {
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
     
-    let newStartDate = startDate;
-    let newEndDate = endDate;
+    let newStartDate: string;
+    let newEndDate: string;
 
     switch (mode) {
         case 'single':
-            newStartDate = todayStr;
-            newEndDate = todayStr;
+            newStartDate = lastSingleDateRef.current;
+            newEndDate = newStartDate;
             break;
         case 'last7': {
             const sevenDaysAgo = new Date();
             sevenDaysAgo.setDate(today.getDate() - 6);
             newStartDate = sevenDaysAgo.toISOString().slice(0, 10);
             newEndDate = todayStr;
+            break;
+        }
+        case 'lastWeek': {
+            const dayInPreviousWeek = new Date(today);
+            dayInPreviousWeek.setDate(today.getDate() - 7);
+
+            const dayOfWeek = dayInPreviousWeek.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+            // Calculate days to subtract to get to the previous Monday
+            const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            
+            const lastMonday = new Date(dayInPreviousWeek);
+            lastMonday.setDate(dayInPreviousWeek.getDate() + diffToMonday);
+            
+            const lastSunday = new Date(lastMonday);
+            lastSunday.setDate(lastMonday.getDate() + 6);
+
+            newStartDate = lastMonday.toISOString().slice(0, 10);
+            newEndDate = lastSunday.toISOString().slice(0, 10);
             break;
         }
         case 'last30': {
@@ -131,7 +150,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
             break;
         }
         case 'range':
-            // Keep the current custom range, no date change needed
+            newStartDate = lastCustomRangeRef.current.start;
+            newEndDate = lastCustomRangeRef.current.end;
             break;
     }
 
@@ -147,16 +167,32 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>, isStartDate: boolean) => {
     const newDate = e.target.value;
+    
     if (isStartDate) {
+      // When changing the start date:
+      const newStartDate = newDate;
+      let newEndDate = endDate;
+
+      // In single day mode, the end date always matches the start date.
+      if (dateSelectionMode === 'single') {
+        newEndDate = newStartDate;
+      } 
+      // In range mode, if the new start date is after the end date,
+      // automatically adjust the end date to match the new start date.
+      else if (newDate > endDate) {
+        newEndDate = newStartDate;
+      }
+      
       onFilterChange({ 
-        startDate: newDate, 
-        endDate: dateSelectionMode === 'single' ? newDate : (newDate > endDate ? newDate : endDate),
+        startDate: newStartDate, 
+        endDate: newEndDate,
         area: selectedArea, 
         shift: selectedShift,
         mode: dateSelectionMode,
         status: selectedStatus,
       });
     } else {
+      // When changing the end date (the 'min' attribute on the input prevents invalid dates):
        onFilterChange({ 
         startDate: startDate, 
         endDate: newDate,
@@ -180,44 +216,44 @@ const FilterBar: React.FC<FilterBarProps> = ({
     onFilterChange({ startDate, endDate, area: selectedArea, shift: selectedShift, mode: dateSelectionMode, status: e.target.value as MachineStatus });
   };
   
-  const areDatesDisabled = dateSelectionMode === 'last7' || dateSelectionMode === 'last30';
+  const areDatesDisabled = dateSelectionMode === 'last7' || dateSelectionMode === 'last30' || dateSelectionMode === 'lastWeek';
   const isShiftDisabled = dateSelectionMode !== 'single';
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg flex flex-col gap-4">
-      {/* Top row for primary filters */}
-      <div className="flex flex-col md:flex-row flex-wrap items-center gap-4">
-        {/* Date Mode Dropdown */}
-        <div className="flex items-center gap-2">
-            <label htmlFor="date-mode-select" className="font-medium text-gray-700 dark:text-gray-300">Date Filter:</label>
-            <select
-                id="date-mode-select"
-                value={dateSelectionMode}
-                onChange={(e) => handleModeChange(e.target.value as DateSelectionMode)}
-                className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800"
-            >
-                <option value="single">Single Day</option>
-                <option value="range">Custom Range</option>
-                <option value="last7">Last 7 Days</option>
-                <option value="last30">Last 30 Days</option>
-            </select>
-        </div>
-
-        {/* Date Inputs */}
-        <div className="flex items-center gap-2">
-          <label htmlFor="start-date-filter" className="font-medium text-gray-700 dark:text-gray-300">{dateSelectionMode !== 'single' ? 'Start:' : 'Date:'}</label>
+    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
+        <FilterField label="Date Mode" htmlFor="date-mode-select">
+          <select
+              id="date-mode-select"
+              value={dateSelectionMode}
+              onChange={(e) => handleModeChange(e.target.value as DateSelectionMode)}
+              className={formInputClass}
+          >
+              <option value="single">Single Day</option>
+              <option value="range">Custom Range</option>
+              <option value="last7">Last 7 Days</option>
+              <option value="lastWeek">Last Week</option>
+              <option value="last30">Last 30 Days</option>
+          </select>
+        </FilterField>
+        
+        <FilterField 
+          label={dateSelectionMode !== 'single' ? 'Start Date' : 'Date'} 
+          htmlFor="start-date-filter"
+          className={dateSelectionMode === 'single' ? 'lg:col-span-2' : ''}
+        >
           <input
             type="date"
             id="start-date-filter"
             value={startDate}
             onChange={(e) => handleDateChange(e, true)}
             disabled={areDatesDisabled}
-            className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 disabled:opacity-70 disabled:cursor-not-allowed"
+            className={formInputClass}
           />
-        </div>
+        </FilterField>
+        
         {dateSelectionMode !== 'single' && (
-          <div className="flex items-center gap-2 animate-fade-in-up">
-            <label htmlFor="end-date-filter" className="font-medium text-gray-700 dark:text-gray-300">End:</label>
+          <FilterField label="End Date" htmlFor="end-date-filter" className="animate-fade-in-up">
             <input
               type="date"
               id="end-date-filter"
@@ -225,73 +261,57 @@ const FilterBar: React.FC<FilterBarProps> = ({
               min={startDate}
               onChange={(e) => handleDateChange(e, false)}
               disabled={areDatesDisabled}
-              className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 disabled:opacity-70 disabled:cursor-not-allowed"
+              className={formInputClass}
             />
-          </div>
+          </FilterField>
         )}
 
-        {/* Area Selector */}
-        <div className="flex items-center gap-2">
-          <label htmlFor="area-filter" className="font-medium text-gray-700 dark:text-gray-300">Khu Vực:</label>
-          <div className="flex flex-col gap-1">
-              <input
-                  type="text"
-                  placeholder="Search area..."
-                  value={areaSearch}
-                  onChange={(e) => setAreaSearch(e.target.value)}
-                  className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  aria-controls="area-filter"
-              />
-              <select
-                id="area-filter"
-                value={selectedArea}
-                onChange={handleAreaChange}
-                className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800"
-              >
-                {filteredAreas.map(area => (
-                  <option key={area} value={area}>
-                    {area === 'all' ? 'Tất cả Khu vực (All Areas)' : area}
-                  </option>
-                ))}
-              </select>
-          </div>
-        </div>
+        <FilterField label="Khu Vực" htmlFor="area-filter">
+          <select
+            id="area-filter"
+            value={selectedArea}
+            onChange={handleAreaChange}
+            className={formInputClass}
+          >
+            {availableAreas.map(area => (
+              <option key={area} value={area}>
+                {area === 'all' ? 'Tất cả Khu vực (All Areas)' : area}
+              </option>
+            ))}
+          </select>
+        </FilterField>
         
-        {/* Shift Selector */}
-        <div className="flex items-center gap-2">
-          <label htmlFor="shift-filter" className={`font-medium ${isShiftDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>Ca:</label>
+        <FilterField label="Ca" htmlFor="shift-filter">
           <select
             id="shift-filter"
             value={selectedShift}
             onChange={handleShiftChange}
             disabled={isShiftDisabled}
-            className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 disabled:bg-gray-200/50 dark:disabled:bg-gray-700/50 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:cursor-not-allowed"
+            className={`${formInputClass} disabled:bg-gray-200/50 dark:disabled:bg-gray-700/50 disabled:text-gray-400 dark:disabled:text-gray-500`}
           >
             <option value="all">Cả Ngày</option>
             <option value="A">Ca A (06:00 - 14:00)</option>
             <option value="B">Ca B (14:00 - 22:00)</option>
             <option value="C">Ca C (22:00 - 06:00)</option>
           </select>
-        </div>
+        </FilterField>
         
-        {/* Machine Status Selector */}
-        <div className="flex items-center gap-2">
-          <label htmlFor="status-filter" className="font-medium text-gray-700 dark:text-gray-300">Status:</label>
+        <FilterField label="Status" htmlFor="status-filter">
           <select
             id="status-filter"
             value={selectedStatus}
             onChange={handleStatusChange}
-            className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800"
+            className={formInputClass}
           >
             <option value="all">All</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select>
-        </div>
+        </FilterField>
       </div>
       
       {/* Bottom row for secondary settings and actions */}
-      <div className="flex flex-col sm:flex-row flex-wrap items-center gap-4">
+      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row flex-wrap items-center gap-4">
         <details className="flex-grow p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
           <summary className="font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none">
             Target Thresholds
@@ -304,7 +324,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </details>
         
-        <div className="self-end">
+        <div className="sm:ml-auto">
           <button
               onClick={onClearFilters}
               className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors flex items-center gap-2"

@@ -1,12 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { ProductionDaily } from '../types';
+import { defectRecords } from '../services/dataService';
 
 interface ProductionLogTableProps {
   data: ProductionDaily[];
   onMachineSelect: (machineId: string) => void;
   onUpdateDefect: (prodId: number, newQty: number) => void;
   oeeThreshold: number;
+  uniqueDefectTypes: string[];
 }
+
+type SortKey = keyof ProductionDaily | 'OEE'; // 'OEE' is explicitly included for clarity
+type SortDirection = 'ascending' | 'descending';
+
 
 const FilterInput: React.FC<{ value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder: string; label: string }> = ({ value, onChange, placeholder, label }) => (
     <input
@@ -21,7 +27,7 @@ const FilterInput: React.FC<{ value: string; onChange: (e: React.ChangeEvent<HTM
 );
 
 
-const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachineSelect, onUpdateDefect, oeeThreshold }) => {
+const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachineSelect, onUpdateDefect, oeeThreshold, uniqueDefectTypes }) => {
   const [editingPopover, setEditingPopover] = useState<{
     prodId: number;
     originalQty: number;
@@ -33,10 +39,15 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
   // Filtering state
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedShift, setSelectedShift] = useState<'all' | 'A' | 'B' | 'C'>('all');
+  const [selectedDefectType, setSelectedDefectType] = useState<'all' | string>('all');
   const [minDefects, setMinDefects] = useState('');
   const [maxDefects, setMaxDefects] = useState('');
   const [minDowntime, setMinDowntime] = useState('');
   const [maxDowntime, setMaxDowntime] = useState('');
+
+  // Sorting state - default to OEE descending
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'OEE', direction: 'descending' });
+
 
   const handleDoubleClick = (log: ProductionDaily, event: React.MouseEvent) => {
     setEditingPopover({
@@ -72,10 +83,19 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
   const handleClearFilters = () => {
       setSearchTerm('');
       setSelectedShift('all');
+      setSelectedDefectType('all');
       setMinDefects('');
       setMaxDefects('');
       setMinDowntime('');
       setMaxDowntime('');
+  };
+  
+  const requestSort = (key: SortKey) => {
+    let direction: SortDirection = 'ascending';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+        direction = 'descending';
+    }
+    setSortConfig({ key, direction });
   };
 
   const filteredData = useMemo(() => {
@@ -84,7 +104,7 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
     const minDowntimeNum = minDowntime !== '' ? parseInt(minDowntime, 10) : -Infinity;
     const maxDowntimeNum = maxDowntime !== '' ? parseInt(maxDowntime, 10) : Infinity;
     
-    return data.filter(log => {
+    const preliminaryFilteredData = data.filter(log => {
       const searchMatch = !searchTerm ||
         log.MACHINE_ID.toLowerCase().includes(searchTerm.toLowerCase()) ||
         log.LINE_ID.toLowerCase().includes(searchTerm.toLowerCase());
@@ -99,13 +119,74 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
 
       return searchMatch && shiftMatch && defectMatch && downtimeMatch;
     });
-  }, [data, searchTerm, selectedShift, minDefects, maxDefects, minDowntime, maxDowntime]);
 
+    if (selectedDefectType === 'all') {
+      return preliminaryFilteredData;
+    }
+
+    // Create a set of keys for production logs that have the selected defect type for efficient lookup
+    const logsWithSelectedDefect = new Set(
+      defectRecords
+        .filter(d => d.DEFECT_TYPE === selectedDefectType)
+        .map(d => `${d.COMP_DAY}|${d.MACHINE_ID}|${d.SHIFT}`)
+    );
+
+    return preliminaryFilteredData.filter(log => {
+      const logKey = `${log.COMP_DAY}|${log.MACHINE_ID}|${log.SHIFT}`;
+      return logsWithSelectedDefect.has(logKey);
+    });
+
+  }, [data, searchTerm, selectedShift, minDefects, maxDefects, minDowntime, maxDowntime, selectedDefectType]);
+
+  const sortedData = useMemo(() => {
+    let sortableItems = [...filteredData];
+    if (sortConfig) {
+      sortableItems.sort((a, b) => {
+        // Handle calculated OEE separately from the object key `OEE`
+        const key = sortConfig.key;
+        let aValue: any;
+        let bValue: any;
+
+        if (key === 'OEE') {
+            aValue = (a.availability ?? 0) * (a.performance ?? 0) * (a.quality ?? 0);
+            bValue = (b.availability ?? 0) * (b.performance ?? 0) * (b.quality ?? 0);
+        } else {
+            aValue = a[key as keyof ProductionDaily];
+            bValue = b[key as keyof ProductionDaily];
+        }
+
+        if (aValue === null || aValue === undefined) return 1;
+        if (bValue === null || bValue === undefined) return -1;
+        
+        let comparison = 0;
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+            comparison = aValue - bValue;
+        } else if (typeof aValue === 'string' && typeof bValue === 'string') {
+            comparison = aValue.localeCompare(bValue);
+        }
+
+        return sortConfig.direction === 'ascending' ? comparison : -comparison;
+      });
+    }
+    return sortableItems;
+  }, [filteredData, sortConfig]);
+
+  const getSortIcon = (key: SortKey) => {
+    if (sortConfig?.key !== key) {
+        return <span className="text-gray-400 dark:text-gray-500 transition-opacity opacity-20 group-hover:opacity-100">↕</span>;
+    }
+    if (sortConfig.direction === 'ascending') {
+        return <span className="text-cyan-500">▲</span>;
+    }
+    return <span className="text-cyan-500">▼</span>;
+  };
+
+  const headerButtonClass = "group inline-flex items-center gap-1.5 focus:outline-none";
 
   return (
     <div>
       <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700/50">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
           <div className="lg:col-span-2">
             <label htmlFor="search-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search Machine/Line</label>
             <input
@@ -130,6 +211,21 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
               <option value="A">Shift A</option>
               <option value="B">Shift B</option>
               <option value="C">Shift C</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="defect-type-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Defect Type</label>
+            <select
+              id="defect-type-select"
+              value={selectedDefectType}
+              onChange={(e) => setSelectedDefectType(e.target.value)}
+              className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            >
+              <option value="all">All Defect Types</option>
+              {uniqueDefectTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
             </select>
           </div>
           
@@ -164,23 +260,37 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6">Machine ID</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Line</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Shift</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Output</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Defects</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Downtime (min)</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Availability</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Performance</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Quality</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">OEE</th>
+              <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6"><button onClick={() => requestSort('MACHINE_ID')} className={headerButtonClass}>Machine ID {getSortIcon('MACHINE_ID')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('LINE_ID')} className={headerButtonClass}>Line {getSortIcon('LINE_ID')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('SHIFT')} className={headerButtonClass}>Shift {getSortIcon('SHIFT')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('ACT_PRO_QTY')} className={headerButtonClass}>Output {getSortIcon('ACT_PRO_QTY')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('DEFECT_QTY')} className={headerButtonClass}>Defects {getSortIcon('DEFECT_QTY')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('DOWNTIME_MIN')} className={headerButtonClass}>Downtime (min) {getSortIcon('DOWNTIME_MIN')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('availability')} className={headerButtonClass}>Availability {getSortIcon('availability')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('performance')} className={headerButtonClass}>Performance {getSortIcon('performance')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('quality')} className={headerButtonClass}>Quality {getSortIcon('quality')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('OEE')} className={headerButtonClass}>OEE {getSortIcon('OEE')}</button></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-900">
-            {filteredData.map((log) => {
-              const isBelowThreshold = log.OEE < (oeeThreshold / 100);
+            {sortedData.map((log) => {
+              const oee = (log.availability ?? 0) * (log.performance ?? 0) * (log.quality ?? 0);
+
+              let rowClass = 'even:bg-gray-50 dark:even:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700/60';
+              let oeeTextClass = '';
+
+              if (oee >= 0.8) {
+                oeeTextClass = 'text-green-500 dark:text-green-400';
+              } else if (oee >= 0.7) {
+                rowClass = 'bg-yellow-100/50 dark:bg-yellow-900/20 hover:bg-yellow-100/70 dark:hover:bg-yellow-900/40';
+                oeeTextClass = 'text-yellow-500 dark:text-yellow-400';
+              } else {
+                rowClass = 'bg-red-100/50 dark:bg-red-900/20 hover:bg-red-100/70 dark:hover:bg-red-900/40';
+                oeeTextClass = 'text-red-500 dark:text-red-400';
+              }
+
               return (
-              <tr key={log.Prod_ID} className={`transition-colors duration-150 ${isBelowThreshold ? 'bg-yellow-100/50 dark:bg-yellow-900/20 hover:bg-yellow-100/70 dark:hover:bg-yellow-900/40' : 'even:bg-gray-50 dark:even:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700/60'}`}>
+              <tr key={log.Prod_ID} className={`transition-colors duration-150 ${rowClass}`}>
                 <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sm:pl-6">
                   <button
                     onClick={() => onMachineSelect(log.MACHINE_ID)}
@@ -208,21 +318,15 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">{(log.performance ?? 0).toLocaleString(undefined, {style: 'percent', minimumFractionDigits: 1})}</td>
                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">{(log.quality ?? 0).toLocaleString(undefined, {style: 'percent', minimumFractionDigits: 1})}</td>
                 <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold">
-                  <span className={isBelowThreshold ? 'text-yellow-500 dark:text-yellow-400' : 'text-gray-900 dark:text-white'}>
-                    {(log.OEE * 100).toFixed(1)}%
+                  <span className={oeeTextClass}>
+                    {(oee * 100).toFixed(1)}%
                   </span>
-                  {isBelowThreshold && (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline-block ml-2 text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
-                    <title>{`Below ${oeeThreshold}% OEE threshold`}</title>
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-4a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clipRule="evenodd" />
-                  </svg>
-                )}
                 </td>
               </tr>
               )})}
           </tbody>
         </table>
-        {filteredData.length === 0 && (
+        {sortedData.length === 0 && (
           <div className="text-center py-8 text-gray-500 dark:text-gray-400">
             No records match your search criteria.
           </div>

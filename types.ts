@@ -1,4 +1,5 @@
 
+
 export interface MachineInfo {
   MACHINE_ID: string;
   MACHINE_NAME: string;
@@ -47,6 +48,7 @@ export interface DefectRecord {
   SHIFT: 'A' | 'B' | 'C';
   ITEM_CODE: string;
   LINE_ID: string;
+  DEFECT_CATEGORY: 'Fixed' | 'Abnormal';
   DESCRIPTION: string;
   SEVERITY: 'Low' | 'Medium' | 'High';
   DISCOVERED_BY: string;
@@ -77,6 +79,8 @@ export interface NewProductionData {
   OPERATOR_NAME: string; // Will be repurposed as DISCOVERED_BY
   COMP_DAY: string;
   
+  DEFECT_CATEGORY: 'Fixed' | 'Abnormal';
+
   // New mandatory fields
   DESCRIPTION: string;
   SEVERITY: 'Low' | 'Medium' | 'High';
@@ -117,6 +121,7 @@ export interface TrendData {
   quality?: number;
   defectRate?: number;
   downtime?: number;
+  totalDefects?: number;
 }
 
 // Data for stacked bar charts (e.g., Downtime by Line & Reason)
@@ -179,6 +184,7 @@ export interface PerformanceAnalysis {
 export interface QualityAnalysis {
   defectPareto: DataPoint[];
   defectRateTrend: TrendData[];
+  defectTrend: TrendData[];
   top5DefectLines: Top5DefectLine[];
 }
 
