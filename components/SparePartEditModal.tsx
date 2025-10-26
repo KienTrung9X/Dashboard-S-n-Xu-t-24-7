@@ -24,8 +24,12 @@ const SparePartEditModal: React.FC<SparePartEditModalProps> = ({ isOpen, onClose
         part_code: '',
         name: '',
         location: '',
-        qty_on_hand: 0,
+        available: 0,
         reorder_point: 0,
+        safety_stock: 0,
+        in_transit: 0,
+        reserved: 0,
+        used_in_period: 0,
         maintenance_interval_days: undefined,
     });
 
@@ -39,8 +43,12 @@ const SparePartEditModal: React.FC<SparePartEditModalProps> = ({ isOpen, onClose
                     part_code: partToEdit.part_code,
                     name: partToEdit.name,
                     location: partToEdit.location,
-                    qty_on_hand: partToEdit.qty_on_hand,
+                    available: partToEdit.available,
                     reorder_point: partToEdit.reorder_point,
+                    safety_stock: partToEdit.safety_stock,
+                    in_transit: partToEdit.in_transit,
+                    reserved: partToEdit.reserved,
+                    used_in_period: partToEdit.used_in_period,
                     maintenance_interval_days: partToEdit.maintenance_interval_days,
                 });
             } else {
@@ -52,7 +60,7 @@ const SparePartEditModal: React.FC<SparePartEditModalProps> = ({ isOpen, onClose
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        const isNumeric = ['qty_on_hand', 'reorder_point', 'maintenance_interval_days'].includes(name);
+        const isNumeric = ['available', 'reorder_point', 'safety_stock', 'in_transit', 'reserved', 'used_in_period', 'maintenance_interval_days'].includes(name);
         setFormData(prev => ({ ...prev, [name]: isNumeric ? (value === '' ? undefined : Number(value)) : value }));
     };
 
@@ -82,9 +90,13 @@ const SparePartEditModal: React.FC<SparePartEditModalProps> = ({ isOpen, onClose
                             <FormField label={t('partCode')} id="part_code" required><input type="text" name="part_code" value={formData.part_code} onChange={handleChange} className={formInputClass} required /></FormField>
                             <FormField label={t('name')} id="name" required><input type="text" name="name" value={formData.name} onChange={handleChange} className={formInputClass} required /></FormField>
                             <div className="md:col-span-2"><FormField label={t('location')} id="location" required><input type="text" name="location" value={formData.location} onChange={handleChange} className={formInputClass} required /></FormField></div>
-                            <FormField label={t('qtyOnHand')} id="qty_on_hand" required><input type="number" name="qty_on_hand" value={formData.qty_on_hand} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
+                            <FormField label={t('available')} id="available" required><input type="number" name="available" value={formData.available} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
                             <FormField label={t('reorderPoint')} id="reorder_point" required><input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
-                            <FormField label={`${t('maintenanceInterval')} (${t('days')})`} id="maintenance_interval_days"><input type="number" name="maintenance_interval_days" value={formData.maintenance_interval_days || ''} onChange={handleChange} min="0" className={formInputClass} /></FormField>
+                            <FormField label={t('safetyStock')} id="safety_stock" required><input type="number" name="safety_stock" value={formData.safety_stock} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
+                            <FormField label={t('inTransit')} id="in_transit" required><input type="number" name="in_transit" value={formData.in_transit} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
+                            <FormField label={t('reserved')} id="reserved" required><input type="number" name="reserved" value={formData.reserved} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
+                            <FormField label={t('used')} id="used_in_period" required><input type="number" name="used_in_period" value={formData.used_in_period} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
+                            <div className="md:col-span-2"><FormField label={`${t('maintenanceInterval')} (${t('days')})`} id="maintenance_interval_days"><input type="number" name="maintenance_interval_days" value={formData.maintenance_interval_days || ''} onChange={handleChange} min="0" className={formInputClass} /></FormField></div>
                         </div>
                     </main>
                     <footer className="px-6 py-4 bg-gray-900/50 flex justify-end gap-3 mt-auto">

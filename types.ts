@@ -127,11 +127,12 @@ export interface SparePart {
     part_code: string;
     name: string;
     location: string;
-    qty_on_hand: number;
+    available: number; // Qty in main warehouse. "InStock" in PRD.
+    in_transit: number; // Qty from open POs. "InTransit" in PRD.
+    reserved: number; // Qty issued to maintenance, not yet used. "Reserved" in PRD.
+    used_in_period: number; // Qty consumed in current period. "Used" in PRD.
+    safety_stock: number;
     reorder_point: number;
-    qty_on_order?: number;
-    order_date?: string; // YYYY-MM-DD
-    expected_arrival_date?: string; // YYYY-MM-DD
     maintenance_interval_days?: number;
     flagged_for_order?: boolean;
 }
@@ -209,6 +210,20 @@ export interface ConsumablePurchaseRequest {
   receipt_month: string; // YYYY-MM
   notes: string | null;
   status: PurchaseStatus;
+}
+
+// New type for MC Part Purchase Orders based on new PRD
+export interface McPartOrder {
+    id: number;
+    order_id: string; // PO number like PO202510A
+    item_code: string;
+    item_name: string;
+    qty_order: number;
+    order_date: string; // YYYY-MM-DD
+    expected_date: string; // YYYY-MM-DD
+    supplier: string;
+    status: 'In Transit' | 'Delayed' | 'Received';
+    area: string;
 }
 
 
@@ -305,8 +320,12 @@ export interface NewSparePartData {
     part_code: string;
     name: string;
     location: string;
-    qty_on_hand: number;
+    available: number;
     reorder_point: number;
+    safety_stock: number;
+    in_transit: number;
+    reserved: number;
+    used_in_period: number;
     maintenance_interval_days?: number;
 }
 
@@ -475,7 +494,25 @@ export interface MachineStatusData {
 export interface MaintenanceKpis {
   mtbf: number;
   mttr: number;
+  breakdownCount: number;
   topMttrMachines: DataPoint[];
+}
+
+// --- NEW TYPES FOR MAINTENANCE DASHBOARD PRD ---
+export interface MachineMaintenanceStats {
+  machineId: string;
+  mtbf: number;
+  mttr: number;
+  breakdownCount: number;
+  totalDowntime: number;
+  status: 'Alert' | 'Warning' | 'Normal';
+}
+
+export interface DowntimeCauseStats {
+  reason: string;
+  count: number;
+  totalMinutes: number;
+  mainMachineImpact: string;
 }
 
 
@@ -554,6 +591,11 @@ export interface DashboardData {
     pmSchedule: EnrichedMaintenanceSchedule[];
     spareParts: SparePart[];
     lowStockParts: SparePart[];
+    mcPartOrders: McPartOrder[];
+    // New data based on PRD
+    machineStats: MachineMaintenanceStats[];
+    downtimeAnalysis: DowntimeCauseStats[];
+    trend: { date: string, mtbf?: number, mttr?: number }[];
   };
 
   benchmarking: {

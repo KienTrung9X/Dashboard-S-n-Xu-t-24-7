@@ -200,7 +200,9 @@ const MaintenanceOrderModal: React.FC<MaintenanceOrderModalProps> = ({ isOpen, o
                              <div className="mt-2 space-y-3 p-3 border dark:border-gray-600 rounded-md">
                                 {partsUsed.map((part, index) => (
                                     <div key={index} className="flex items-center gap-2">
-                                        <div className="flex-grow"><label htmlFor={`part-${index}`} className="sr-only">{t('part')}</label><select id={`part-${index}`} value={part.part_id} onChange={(e) => handlePartChange(index, 'part_id', e.target.value)} className={formInputClass + " mt-0"}><option value="">{t('selectPart')}</option>{allSpareParts.map(p => (<option key={p.id} value={p.id}>{p.name} ({p.part_code}) - {p.qty_on_hand} left</option>))}</select></div>
+                                        <div className="flex-grow"><label htmlFor={`part-${index}`} className="sr-only">{t('part')}</label><select id={`part-${index}`} value={part.part_id} onChange={(e) => handlePartChange(index, 'part_id', e.target.value)} className={formInputClass + " mt-0"}><option value="">{t('selectPart')}</option>{allSpareParts.map(p => (
+                                            // FIX: Replaced non-existent 'qty_on_hand' with 'available' to match the 'SparePart' type definition.
+                                            <option key={p.id} value={p.id}>{p.name} ({p.part_code}) - {p.available} left</option>))}</select></div>
                                         <div className="w-24"><label htmlFor={`qty-${index}`} className="sr-only">{t('quantity')}</label><input id={`qty-${index}`} type="number" min="1" value={part.qty_used} onChange={(e) => handlePartChange(index, 'qty_used', parseInt(e.target.value))} className={formInputClass + " mt-0"}/></div>
                                         <button type="button" onClick={() => removePartRow(index)} className="p-2 text-gray-400 hover:text-red-400 rounded-full transition-colors">&times;</button>
                                     </div>

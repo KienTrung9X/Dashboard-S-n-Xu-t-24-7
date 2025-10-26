@@ -7,7 +7,8 @@ import {
     // FIX: Added missing type imports
     DefectRecord, EnrichedDefectRecord, MaintenanceOrder, MaintenancePartUsage, EnrichedMaintenanceOrder, NewMaintenanceOrderData, CauseCategory, NewMachineData,
     McPartPurchaseRequest, ConsumablePurchaseRequest, PurchaseStatus, NewConsumableRequestData, NewSparePartData, NewMcPartRequestData,
-    MaintenanceSchedule, PmPartsTemplate, EnrichedMaintenanceSchedule
+    MaintenanceSchedule, PmPartsTemplate, EnrichedMaintenanceSchedule, McPartOrder,
+    MachineMaintenanceStats, DowntimeCauseStats
 } from '../types';
 import { quantile } from 'simple-statistics';
 
@@ -63,11 +64,45 @@ export let machineInfoData: MachineInfo[] = [
 ];
 
 export let sparePartsData: SparePart[] = [
-    { id: 1, part_code: 'FIL-001', name: 'Air Filter', location: 'Aisle 3, Bin 12', qty_on_hand: 15, reorder_point: 10, maintenance_interval_days: 30, flagged_for_order: false },
-    { id: 2, part_code: 'BELT-045', name: 'Conveyor Belt M01/M02', location: 'Aisle 1, Bin 4', qty_on_hand: 8, reorder_point: 10, qty_on_order: 10, order_date: '2025-10-25', expected_arrival_date: '2025-11-05', maintenance_interval_days: 365, flagged_for_order: true },
-    { id: 3, part_code: 'BEAR-210', name: 'Ball Bearing 210mm', location: 'Aisle 3, Bin 5', qty_on_hand: 50, reorder_point: 20, maintenance_interval_days: 365, flagged_for_order: false },
-    { id: 4, part_code: 'NOZ-PNT-A', name: 'Paint Nozzle Type A', location: 'Aisle 5, Bin 1', qty_on_hand: 4, reorder_point: 5, qty_on_order: 5, order_date: '2025-10-28', expected_arrival_date: '2025-11-10', maintenance_interval_days: 365, flagged_for_order: false },
+    // Sufficient stock
+    { id: 1, part_code: 'FIL-001', name: 'Air Filter', location: 'Aisle 3, Bin 12', 
+      available: 15, in_transit: 0, reserved: 2, used_in_period: 8, safety_stock: 8, reorder_point: 10,
+      maintenance_interval_days: 30, flagged_for_order: false
+    },
+    // Almost out
+    { id: 2, part_code: 'BLT-A300', name: 'Belt A300', location: 'Aisle 3, Bin 5', 
+      available: 3, in_transit: 0, reserved: 0, used_in_period: 8, safety_stock: 3, reorder_point: 5,
+      flagged_for_order: false
+    },
+    // Sufficient stock
+     { id: 3, part_code: 'BEAR-210', name: 'Ball Bearing 210mm', location: 'Aisle 3, Bin 5',
+      available: 50, in_transit: 20, reserved: 5, used_in_period: 15, safety_stock: 15, reorder_point: 20,
+      maintenance_interval_days: 365, flagged_for_order: false 
+    },
+     // Need to order
+    { id: 4, part_code: 'NOZ-PNT-A', name: 'Paint Nozzle Type A', location: 'Aisle 5, Bin 1',
+      available: 4, in_transit: 0, reserved: 1, used_in_period: 5, safety_stock: 5, reorder_point: 5,
+      flagged_for_order: false
+    },
+    // From PRD example: "Cần đặt hàng" (Need to order)
+    { id: 5, part_code: 'CP-F20005', name: 'Coupling F20005', location: 'Aisle 2, Bin 8', 
+      available: 1, in_transit: 1, reserved: 2, used_in_period: 15, safety_stock: 4, reorder_point: 6,
+      flagged_for_order: true
+    },
+    // From PRD example: "Đủ" (Sufficient)
+    { id: 6, part_code: 'BRG-6301ZZE', name: 'Bearing 6301ZZE', location: 'Aisle 1, Bin 4', 
+      available: 5, in_transit: 2, reserved: 1, used_in_period: 20, safety_stock: 3, reorder_point: 5,
+      flagged_for_order: false,
+    },
 ];
+
+export const mcPartOrdersData: McPartOrder[] = [
+    { id: 1, area: '312', order_id: 'PO202510A', item_code: 'BRG-6301ZZE', item_name: 'Bearing 6301ZZE', qty_order: 2, order_date: '2025-10-01', expected_date: '2025-10-28', supplier: 'NSK Vietnam', status: 'In Transit' },
+    { id: 2, area: '312', order_id: 'PO202510B', item_code: 'CP-F20005', item_name: 'Coupling F20005', qty_order: 1, order_date: '2025-10-03', expected_date: '2025-10-30', supplier: 'Miba', status: 'Delayed' },
+    { id: 3, area: '410', order_id: 'PO202509C', item_code: 'NOZ-PNT-A', item_name: 'Paint Nozzle Type A', qty_order: 5, order_date: '2025-09-15', expected_date: '2025-10-15', supplier: 'Graco Inc.', status: 'Received' },
+    { id: 4, area: '320', order_id: 'PO202510D', item_code: 'BEAR-210', item_name: 'Ball Bearing 210mm', qty_order: 20, order_date: '2025-10-10', expected_date: '2025-11-05', supplier: 'SKF', status: 'In Transit' },
+];
+
 
 const machineIdMap = new Map(machineInfoData.map(m => [m.id, m]));
 
@@ -316,7 +351,7 @@ export const addMachine = (data: NewMachineData) => {
     machineInfoData.unshift(newMachine);
 };
 
-export const updateMachine = (machineId: number, data: Partial<NewMachineData>) => {
+export const updateMachine = (machineId: number, data: Partial<MachineInfo>) => {
     const machineIndex = machineInfoData.findIndex(m => m.id === machineId);
     if (machineIndex > -1) {
         machineInfoData[machineIndex] = {
@@ -745,12 +780,12 @@ export const getDashboardData = async (
     });
 
 
-    // --- Maintenance Calculations ---
+    // --- Maintenance Calculations (based on PRD) ---
     const enrichedMaintenanceOrders = enrichMaintenanceOrders(maintenanceOrdersData);
     const completedBreakdowns = enrichedMaintenanceOrders.filter(o => (o.type === 'Breakdown' || o.type === 'CM') && o.status === 'Done' && o.downtime_min);
     const mttr = completedBreakdowns.reduce((sum, o) => sum + o.downtime_min!, 0) / (completedBreakdowns.length || 1);
-    const totalRunTime = productionDailyData.reduce((sum, p) => sum + p.RUN_TIME_MIN, 0);
     const breakdownCount = enrichedMaintenanceOrders.filter(o => o.type === 'Breakdown').length;
+    const totalRunTime = productionDailyData.reduce((sum, p) => sum + p.RUN_TIME_MIN, 0);
     const mtbf = (totalRunTime / 60) / (breakdownCount || 1); // in hours
     const mttrByMachine = completedBreakdowns.reduce((acc, order) => {
         if (!acc[order.MACHINE_ID]) acc[order.MACHINE_ID] = { total: 0, count: 0 };
@@ -774,6 +809,53 @@ export const getDashboardData = async (
     };
     
     const enrichedPmSchedule = enrichMaintenanceSchedules(maintenanceScheduleData);
+
+    const lowStockParts = sparePartsData.filter(p => (p.available + p.in_transit) < p.reorder_point);
+
+    // --- New Maintenance Calculations per PRD ---
+    const machineStats: MachineMaintenanceStats[] = machineInfoData.map(mInfo => {
+        const machineBreakdowns = enrichedMaintenanceOrders.filter(o => o.MACHINE_ID === mInfo.MACHINE_ID && o.type === 'Breakdown');
+        const machineCompletedBreakdowns = machineBreakdowns.filter(o => o.status === 'Done' && o.downtime_min);
+        const machineRunTime = filteredProduction.filter(p => p.MACHINE_ID === mInfo.MACHINE_ID).reduce((sum, p) => sum + p.RUN_TIME_MIN, 0);
+
+        const breakdownCount = machineBreakdowns.length;
+        const totalDowntime = machineCompletedBreakdowns.reduce((sum, o) => sum + o.downtime_min!, 0);
+        const mttr = machineCompletedBreakdowns.length > 0 ? totalDowntime / machineCompletedBreakdowns.length : 0;
+        const mtbf = breakdownCount > 0 ? (machineRunTime / 60) / breakdownCount : machineRunTime / 60; // in hours
+
+        let status: 'Alert' | 'Warning' | 'Normal' = 'Normal';
+        if (mtbf < 1000 || mttr > 120) status = 'Alert';
+        else if (mtbf < 1500) status = 'Warning';
+        
+        return { machineId: mInfo.MACHINE_ID, mtbf, mttr, breakdownCount, totalDowntime, status };
+    });
+
+    const downtimeByReason = filteredDowntimeRecords.reduce((acc, d) => {
+        if (!acc[d.DOWNTIME_REASON]) acc[d.DOWNTIME_REASON] = [];
+        acc[d.DOWNTIME_REASON].push({ machine: d.MACHINE_ID, minutes: d.DOWNTIME_MIN });
+        return acc;
+    }, {} as Record<string, {machine: string, minutes: number}[]>);
+
+    const downtimeAnalysis: DowntimeCauseStats[] = Object.entries(downtimeByReason).map(([reason, entries]) => {
+        const totalMinutes = entries.reduce((sum, e) => sum + e.minutes, 0);
+        const machineImpact = entries.reduce((acc, e) => {
+            acc[e.machine] = (acc[e.machine] || 0) + e.minutes;
+            return acc;
+        }, {} as Record<string, number>);
+        const mainMachineImpact = Object.keys(machineImpact).length > 0 ? Object.entries(machineImpact).sort((a,b) => b[1] - a[1])[0][0] : 'N/A';
+        return { reason, count: entries.length, totalMinutes, mainMachineImpact };
+    }).sort((a,b) => b.totalMinutes - a.totalMinutes);
+
+    const maintenanceTrend = Array.from({length: 30}).map((_, i) => {
+        const date = new Date('2025-10-30');
+        date.setDate(date.getDate() - (29 - i));
+        return {
+            date: date.toISOString().slice(0, 10),
+            mtbf: 1800 - i * 15 + Math.random() * 200,
+            mttr: 90 + i * 1.2 - Math.random() * 20,
+        };
+    });
+
 
     return {
         productionLog: filteredProduction,
@@ -837,11 +919,15 @@ export const getDashboardData = async (
             uniqueDowntimeReasons: uniqueDowntimeReasons,
         },
         maintenance: {
-            kpis: { mtbf, mttr, topMttrMachines },
+            kpis: { mtbf, mttr, breakdownCount, topMttrMachines },
             schedule: maintenanceSchedule,
             pmSchedule: enrichedPmSchedule,
             spareParts: sparePartsData,
-            lowStockParts: sparePartsData.filter(p => p.qty_on_hand <= p.reorder_point)
+            lowStockParts,
+            mcPartOrders: mcPartOrdersData,
+            machineStats,
+            downtimeAnalysis,
+            trend: maintenanceTrend,
         },
         benchmarking: {
             oeeByLine: [], // dummy

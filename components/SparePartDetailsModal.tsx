@@ -37,7 +37,7 @@ const SparePartDetailsModal: React.FC<SparePartDetailsModalProps> = ({ isOpen, o
         if (e.target === e.currentTarget) onClose();
     };
 
-    const isLowStock = part.qty_on_hand <= part.reorder_point;
+    const isLowStock = part.available <= part.reorder_point;
 
     const getStatusChip = () => {
         if (isLowStock) {
@@ -68,14 +68,15 @@ const SparePartDetailsModal: React.FC<SparePartDetailsModalProps> = ({ isOpen, o
                 <main className="p-6 overflow-y-auto space-y-6">
                     <SectionCard title={t('inventoryInfo')} icon={<Package size={18} />}>
                         <DetailItem label={t('partStatus')} value={getStatusChip()} />
-                        <DetailItem label={t('onHand')} value={part.qty_on_hand.toLocaleString()} />
-                        <DetailItem label={t('reorderPoint')} value={part.reorder_point.toLocaleString()} />
+                        <DetailItem label={t('onHand')} value={part.available.toLocaleString()} />
+                        <DetailItem label={t('reserved')} value={part.reserved.toLocaleString()} />
+                        <DetailItem label={t('used')} value={`${part.used_in_period.toLocaleString()}`} />
                     </SectionCard>
 
                     <SectionCard title={t('orderingInfo')} icon={<Calendar size={18} />}>
-                        <DetailItem label={t('onOrder')} value={part.qty_on_order?.toLocaleString() || 0} />
-                        <DetailItem label={t('orderDate')} value={part.order_date} />
-                        <DetailItem label={t('expectedArrival')} value={part.expected_arrival_date} />
+                        <DetailItem label={t('onOrder')} value={part.in_transit?.toLocaleString() || 0} />
+                        <DetailItem label={t('reorderPoint')} value={part.reorder_point.toLocaleString()} />
+                        <DetailItem label={t('safetyStock')} value={part.safety_stock.toLocaleString()} />
                     </SectionCard>
                     
                      <SectionCard title={t('location')} icon={<MapPin size={18} />}>

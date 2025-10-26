@@ -1,119 +1,209 @@
 import React from 'react';
-import { EnrichedMaintenanceOrder, MaintenanceKpis, SparePart, NewMaintenanceOrderData } from '../types';
+import { EnrichedMaintenanceOrder, MaintenanceKpis, SparePart, NewMaintenanceOrderData, MachineMaintenanceStats, DowntimeCauseStats } from '../types';
 import KpiCard from './KpiCard';
-import Top5Table from './Top5Table';
-import { AlertTriangle, PlusCircle, ArrowRightCircle, HardHat } from 'lucide-react';
+import { AlertTriangle, PlusCircle, ArrowRightCircle, HardHat, ShoppingCart, Wrench, Calendar, Clock } from 'lucide-react';
 import { useTranslation } from '../i18n/LanguageContext';
+import SimpleBarChart from '../services/SimpleBarChart';
+import TrendChart from '../TrendChart';
 
 interface MaintenanceDashboardProps {
   data: {
-    records: EnrichedMaintenanceOrder[];
     kpis: MaintenanceKpis;
     schedule: {
         overdue: EnrichedMaintenanceOrder[];
         dueSoon: EnrichedMaintenanceOrder[];
     },
-    spareParts: SparePart[];
     lowStockParts: SparePart[];
+    machineStats: MachineMaintenanceStats[];
+    downtimeAnalysis: DowntimeCauseStats[];
+    trend: { date: string, mtbf?: number, mttr?: number }[];
   },
   onOpenModal: (defaults?: Partial<NewMaintenanceOrderData>) => void;
   onNavigateToInventory: () => void;
   onNavigateToSchedule: (filter: 'overdue' | 'dueSoon' | 'all') => void;
+  onCreatePo: (part: SparePart) => void;
+  theme: 'light' | 'dark';
 }
 
-const MaintenanceDashboard: React.FC<MaintenanceDashboardProps> = ({ data, onOpenModal, onNavigateToInventory, onNavigateToSchedule }) => {
-    const { t } = useTranslation();
-    const { kpis, schedule, lowStockParts } = data;
+const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+    <section>
+        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{title}</h2>
+        {children}
+    </section>
+);
 
-    const SummaryCard: React.FC<{title: string, count: number, description: string, color: string, onClick: () => void}> = ({title, count, description, color, onClick}) => (
-        <div 
-            className={`bg-gray-800 p-4 rounded-lg shadow-md cursor-pointer hover:bg-gray-700/50 border-l-4 ${color}`}
-            onClick={onClick}
-        >
-            <h3 className="font-semibold text-gray-200">{title}</h3>
-            <p className="text-4xl font-bold mt-2">{count}</p>
-            <p className="text-xs text-gray-400 mt-1">{description}</p>
+const MaintenanceDashboard: React.FC<MaintenanceDashboardProps> = ({ data, onOpenModal, onNavigateToInventory, onNavigateToSchedule, onCreatePo, theme }) => {
+    const { t } = useTranslation();
+    const { kpis, schedule, lowStockParts, machineStats, downtimeAnalysis, trend } = data;
+
+    const LowStockTable: React.FC = () => (
+        <section className="animate-pulse-bg dark:animate-pulse-bg rounded-lg p-4 border border-orange-400 dark:border-orange-800">
+            <div className="flex justify-between items-start">
+                <h2 className="text-xl font-semibold text-orange-800 dark:text-orange-300 mb-2 flex items-center gap-2">
+                    <AlertTriangle size={20} /> {t('lowStockAlerts')}
+                </h2>
+                <button 
+                    onClick={onNavigateToInventory}
+                    className="bg-orange-500/20 hover:bg-orange-500/40 text-orange-300 font-bold py-2 px-4 rounded-lg shadow-md flex items-center gap-2 transition-colors text-sm"
+                >
+                    {t('goToInventory')}
+                    <ArrowRightCircle size={16} />
+                </button>
+            </div>
+             <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                    <thead className="text-left text-orange-900 dark:text-orange-200">
+                        <tr>
+                            <th className="p-2">{t('partCode')}</th>
+                            <th className="p-2">{t('name')}</th>
+                            <th className="p-2">{t('stock')}</th>
+                            <th className="p-2">{t('minStock')}</th>
+                            <th className="p-2">{t('actions')}</th>
+                        </tr>
+                    </thead>
+                    <tbody className="text-orange-800 dark:text-orange-300">
+                        {lowStockParts.map(part => (
+                            <tr key={part.id} className="border-t border-orange-300/30 dark:border-orange-700/50">
+                                <td className="p-2 font-mono">{part.part_code}</td>
+                                <td className="p-2">{part.name}</td>
+                                <td className="p-2 font-bold">{part.available}</td>
+                                <td className="p-2">{part.reorder_point}</td>
+                                <td className="p-2">
+                                    <button onClick={() => onCreatePo(part)} className="bg-orange-500/80 hover:bg-orange-600 text-white font-semibold py-1 px-2 rounded-md flex items-center gap-1 text-xs">
+                                        <ShoppingCart size={12}/> {t('createPO')}
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    );
+
+    const MachineStatsTable: React.FC = () => {
+        // FIX: The property key '-class' is invalid. Renamed to 'className' for valid syntax and standard React practice.
+        const statusConfig = {
+            Alert: {className: 'bg-red-500/20 border-red-500', text: 'text-red-400', label: t('alert')},
+            Warning: {className: 'bg-yellow-500/20 border-yellow-500', text: 'text-yellow-400', label: t('warning')},
+            Normal: {className: 'bg-green-500/20 border-green-500', text: 'text-green-400', label: t('normal')},
+        };
+        return (
+            <div className="bg-gray-800 p-4 rounded-lg shadow-md">
+                 <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                        <thead className="text-left text-gray-400">
+                             <tr>
+                                {['machine', 'status', 'mtbf (h)', 'mttr (min)', 'totalBreakdowns', 'totalDowntime_short'].map(key => (
+                                    <th key={key} className="p-2">{t(key as any)}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-700">
+                            {machineStats.map(stat => (
+                                <tr key={stat.machineId} className="hover:bg-gray-700/50">
+                                    <td className="p-2 font-bold">{stat.machineId}</td>
+                                    <td className="p-2">
+                                        {/* FIX: Updated property access from '.-class' to '.className' to match the corrected object key. */}
+                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusConfig[stat.status].className} ${statusConfig[stat.status].text}`}>
+                                            {statusConfig[stat.status].label}
+                                        </span>
+                                    </td>
+                                    <td className="p-2">{stat.mtbf.toFixed(1)}</td>
+                                    <td className="p-2">{stat.mttr.toFixed(1)}</td>
+                                    <td className="p-2">{stat.breakdownCount}</td>
+                                    <td className="p-2">{stat.totalDowntime}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+    };
+
+    const DowntimeAnalysisTable: React.FC = () => (
+         <div className="bg-gray-800 p-4 rounded-lg shadow-md">
+            <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                     <thead className="text-left text-gray-400">
+                        <tr>
+                            {['cause', 'count', 'totalTime', 'mainImpact'].map(key => (
+                                <th key={key} className="p-2">{t(key as any)}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-700">
+                        {downtimeAnalysis.map(item => (
+                            <tr key={item.reason} className="hover:bg-gray-700/50">
+                                <td className="p-2 font-bold">{item.reason}</td>
+                                <td className="p-2">{item.count}</td>
+                                <td className="p-2">{item.totalMinutes.toFixed(0)}</td>
+                                <td className="p-2">{item.mainMachineImpact}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+    
+    const PmTaskList: React.FC<{title: string, tasks: EnrichedMaintenanceOrder[], color: string, onClick: () => void}> = ({ title, tasks, color, onClick }) => (
+        <div className={`bg-gray-800 p-4 rounded-lg shadow-md border-l-4 ${color}`}>
+            <h3 className="font-semibold text-gray-200 mb-2">{title} ({tasks.length})</h3>
+            {tasks.length > 0 ? (
+                <ul className="space-y-2 text-sm max-h-48 overflow-y-auto">
+                    {tasks.map(task => (
+                        <li key={task.id} className="p-2 bg-gray-700/50 rounded-md">
+                            <p className="font-bold">{task.MACHINE_ID}: <span className="font-normal">{task.symptom}</span></p>
+                            <p className="text-xs text-gray-400">{t('dueDate')}: {new Date(task.created_at).toLocaleDateString()}</p>
+                        </li>
+                    ))}
+                </ul>
+            ) : <p className="text-sm text-gray-500">{t('noUpcomingTasks')}</p>}
         </div>
     );
 
-    return (
-        <div className="space-y-6">
-             {lowStockParts.length > 0 && (
-                <section className="animate-pulse-bg dark:animate-pulse-bg rounded-lg p-4 border border-orange-400 dark:border-orange-800">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <h2 className="text-xl font-semibold text-orange-800 dark:text-orange-300 mb-2 flex items-center gap-2">
-                                <AlertTriangle size={20} /> {t('lowStockAlerts')}
-                            </h2>
-                            <ul className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-sm text-orange-700 dark:text-orange-300">
-                                {lowStockParts.map(part => (
-                                    <li key={part.id}>
-                                        <strong>{part.part_code}:</strong> {part.qty_on_hand} {t('leftMin')} {part.reorder_point})
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                        <button 
-                            onClick={onNavigateToInventory}
-                            className="bg-orange-500/20 hover:bg-orange-500/40 text-orange-300 font-bold py-2 px-4 rounded-lg shadow-md flex items-center gap-2 transition-colors text-sm"
-                        >
-                            {t('goToInventory')}
-                            <ArrowRightCircle size={16} />
-                        </button>
-                    </div>
-                </section>
-            )}
 
-            <section>
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-2xl font-semibold text-cyan-400 border-l-4 border-cyan-400 pl-3">{t('maintKpis')}</h2>
-                    <button 
-                        onClick={() => onOpenModal()}
-                        className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center gap-2 transition-transform transform hover:scale-105"
-                    >
-                        <PlusCircle size={16} />
-                        {t('createNewOrder')}
-                    </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    return (
+        <div className="space-y-8">
+             {lowStockParts.length > 0 && <LowStockTable />}
+
+            <Section title={t('maintKpis')}>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <KpiCard title={t('mtbf')} value={kpis.mtbf} unit=" hours" precision={1} description="Mean Time Between Failures"/>
                     <KpiCard title={t('mttr')} value={kpis.mttr} unit=" min" precision={1} description="Mean Time To Repair"/>
-                    <div className="lg:col-span-2 bg-gray-800 p-4 rounded-lg shadow-md">
-                        <h3 className="text-lg font-semibold mb-2">{t('top5Mttr')}</h3>
-                        <Top5Table headers={[t('machineId'), t('avgRepairTime')]} data={kpis.topMttrMachines.map(d => ({ col1: d.name, col2: d.value.toFixed(1) }))} />
-                    </div>
+                    <KpiCard title={t('breakdownCount')} value={kpis.breakdownCount} unit="" precision={0} description="Total breakdowns in the period"/>
                 </div>
-            </section>
+            </Section>
+
+            <Section title={t('mttrTrend')}>
+                 <div className="bg-gray-800 p-4 rounded-lg shadow-md">
+                    <TrendChart
+                        data={trend}
+                        lines={[
+                            { dataKey: 'mtbf', stroke: '#22d3ee', name: 'MTBF (h)' },
+                            { dataKey: 'mttr', stroke: '#f97316', name: 'MTTR (min)' },
+                        ]}
+                        theme={theme}
+                    />
+                 </div>
+            </Section>
+
+            <Section title={t('maintenanceKpisByMachine')}>
+                <MachineStatsTable />
+            </Section>
+
+            <Section title={t('downtimeCauseAnalysis')}>
+                <DowntimeAnalysisTable />
+            </Section>
             
-            <section>
-                <div className="flex justify-between items-center">
-                    <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('pmSchedule')}</h2>
-                    <button onClick={() => onNavigateToSchedule('all')} className="text-sm text-cyan-400 hover:underline flex items-center gap-2">
-                        {t('viewFullSchedule')} <ArrowRightCircle size={16}/>
-                    </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <SummaryCard 
-                        title={t('overdue')} 
-                        count={schedule.overdue.length} 
-                        description="PM tasks need immediate attention" 
-                        color="border-red-500"
-                        onClick={() => onNavigateToSchedule('overdue')}
-                    />
-                    <SummaryCard 
-                        title={t('dueSoon')} 
-                        count={schedule.dueSoon.length} 
-                        description="PM tasks due within 14 days" 
-                        color="border-yellow-500"
-                        onClick={() => onNavigateToSchedule('dueSoon')}
-                    />
-                    <div className="bg-gray-800 p-4 rounded-lg shadow-md border-l-4 border-blue-500">
-                        <h3 className="font-semibold text-gray-200">Open Work Orders</h3>
-                        <p className="text-4xl font-bold mt-2">{data.records.filter(r => r.status === 'Open' || r.status === 'InProgress').length}</p>
-                        <p className="text-xs text-gray-400 mt-1">Includes PM, CM, and Breakdown</p>
-                    </div>
-                </div>
-            </section>
+            <Section title={t('pmTasks')}>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <PmTaskList title={t('overdue')} tasks={schedule.overdue} color="border-red-500" onClick={() => onNavigateToSchedule('overdue')} />
+                    <PmTaskList title={t('dueSoon')} tasks={schedule.dueSoon} color="border-yellow-500" onClick={() => onNavigateToSchedule('dueSoon')} />
+                 </div>
+            </Section>
             
         </div>
     );

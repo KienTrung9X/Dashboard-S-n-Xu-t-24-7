@@ -18,7 +18,8 @@ const FormField: React.FC<{ label: string; id: string; required?: boolean; child
 
 const McPartRequestModal: React.FC<McPartRequestModalProps> = ({ isOpen, onClose, onSubmit, part }) => {
     const { t } = useTranslation();
-    const [quantity, setQuantity] = useState(part.reorder_point > part.qty_on_hand ? part.reorder_point : 10);
+    // FIX: Replaced non-existent 'qty_on_hand' with 'available' to match the 'SparePart' type definition.
+    const [quantity, setQuantity] = useState(part.reorder_point > part.available ? part.reorder_point : 10);
     const [reason, setReason] = useState('');
     const [error, setError] = useState('');
 

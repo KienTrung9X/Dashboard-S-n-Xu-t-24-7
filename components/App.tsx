@@ -16,7 +16,7 @@ import {
     updateSparePart,
     toggleFlagForOrder,
 } from '../services/dataService';
-import { DashboardData, EnrichedErrorReport, NewErrorReportData, UpdateErrorData, ErrorReportStatus, NewMaintenanceOrderData, EnrichedDefectRecord, MachineInfo, NewMachineData, SparePart, EnrichedMaintenanceOrder, McPartPurchaseRequest, ConsumablePurchaseRequest, PurchaseStatus, NewConsumableRequestData, NewMcPartRequestData, NewSparePartData, EnrichedMaintenanceSchedule } from '../types';
+import { DashboardData, EnrichedErrorReport, NewErrorReportData, UpdateErrorData, ErrorReportStatus, NewMaintenanceOrderData, EnrichedDefectRecord, MachineInfo, NewMachineData, SparePart, EnrichedMaintenanceOrder, McPartPurchaseRequest, ConsumablePurchaseRequest, PurchaseStatus, NewConsumableRequestData, NewMcPartRequestData, NewSparePartData, EnrichedMaintenanceSchedule, McPartOrder } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
 
 // UI Components
@@ -41,7 +41,7 @@ import AiAnalysis from './AiAnalysis';
 import ErrorLogTable from './ErrorLogTable';
 import ErrorReportModal from './ErrorReportModal';
 import MaintenanceDashboard from './MaintenanceDashboard';
-import SparePartsInventory from './SparePartsInventory';
+import SparePartsInventory from '../SparePartsInventory';
 import MaintenanceOrderModal from './MaintenanceOrderModal';
 import MachineEditModal from './MachineEditModal';
 import SparePartDetailsModal from './SparePartDetailsModal';
@@ -54,13 +54,80 @@ import MaintenanceScheduleView from './MaintenanceSchedule';
 
 
 // Icons
-import { LayoutDashboard, BarChart3, ShieldAlert, AlertTriangle, ListChecks, Database, HelpCircle, PlusCircle, Grid, Wrench, PackageSearch, ShoppingCart, Sun, Moon, Languages, Loader2, CalendarClock } from 'lucide-react';
+// FIX: Imported missing `CheckCircle` icon from lucide-react.
+import { LayoutDashboard, BarChart3, ShieldAlert, AlertTriangle, ListChecks, Database, HelpCircle, PlusCircle, Grid, Wrench, PackageSearch, ShoppingCart, Sun, Moon, Languages, Loader2, CalendarClock, Truck, CheckCircle } from 'lucide-react';
 
 type Tab = 'shopFloor' | 'overview' | 'performance' | 'quality' | 'downtime' | 'errorLog' | 'maintenance' | 'purchasing';
-type MaintenanceSubTab = 'dashboard' | 'inventory' | 'pmSchedule';
+type MaintenanceSubTab = 'dashboard' | 'mcPartInventory' | 'purchaseOrders' | 'pmSchedule';
 type PurchasingSubTab = 'mcPart' | 'consumable';
 
 // --- START OF IN-FILE PURCHASING COMPONENTS ---
+
+interface McPartPurchaseOrdersProps {
+    orders: McPartOrder[];
+    t: (key: any) => string;
+}
+
+const McPartPurchaseOrders: React.FC<McPartPurchaseOrdersProps> = ({ orders, t }) => {
+    const getStatusChip = (status: McPartOrder['status']) => {
+        const styles: Record<McPartOrder['status'], string> = {
+            'In Transit': 'bg-blue-900 text-blue-300',
+            'Delayed': 'bg-red-900 text-red-300',
+            'Received': 'bg-green-900 text-green-300',
+        };
+        const icons: Record<McPartOrder['status'], React.ReactNode> = {
+            'In Transit': <Truck size={12} className="mr-1.5"/>,
+            'Delayed': <AlertTriangle size={12} className="mr-1.5"/>,
+            'Received': <CheckCircle size={12} className="mr-1.5"/>,
+        };
+        const translatedStatus = t(status.replace(/\s/g, '_').toLowerCase() as any);
+        return (
+            <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${styles[status]}`}>
+                {icons[status]}
+                {translatedStatus || status}
+            </span>
+        );
+    };
+    
+    return (
+         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+            <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('purchaseOrders')}</h2>
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                            <th className="py-3 px-4 text-left">{t('area')}</th>
+                            <th className="py-3 px-4 text-left">{t('orderId')}</th>
+                            <th className="py-3 px-4 text-left">{t('itemName')}</th>
+                            <th className="py-3 px-4 text-left">{t('quantity')}</th>
+                            <th className="py-3 px-4 text-left">{t('orderDate')}</th>
+                            <th className="py-3 px-4 text-left">{t('expectedDate')}</th>
+                            <th className="py-3 px-4 text-left">{t('supplier')}</th>
+                            <th className="py-3 px-4 text-left">{t('status')}</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                        {orders.length > 0 ? orders.map(req => (
+                            <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <td className="py-3 px-4">{req.area}</td>
+                                <td className="py-3 px-4 font-mono">{req.order_id}</td>
+                                <td className="py-3 px-4">{req.item_name}</td>
+                                <td className="py-3 px-4">{req.qty_order}</td>
+                                <td className="py-3 px-4">{req.order_date}</td>
+                                <td className="py-3 px-4">{req.expected_date}</td>
+                                <td className="py-3 px-4">{req.supplier}</td>
+                                <td className="py-3 px-4">{getStatusChip(req.status)}</td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan={8} className="text-center py-8 text-gray-500">{t('noMcPartRequests')}</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 
 interface McPartPurchasingProps {
     requests: McPartPurchaseRequest[];
@@ -335,6 +402,11 @@ const App: React.FC = () => {
         forceDataRefresh();
     };
 
+    const handleUpdateMachinePosition = (machineId: number, newPosition: { x: number; y: number }) => {
+        updateMachine(machineId, { x: newPosition.x, y: newPosition.y });
+        forceDataRefresh(); 
+    };
+
     const handleOpenSparePartDetails = (part: SparePart) => {
         setSelectedSparePart(part);
     };
@@ -365,8 +437,10 @@ const App: React.FC = () => {
 
     const handleSparePartSubmit = (data: NewSparePartData, id: number | null) => {
         if (id) {
+            // @ts-ignore
             updateSparePart(id, data);
         } else {
+            // @ts-ignore
             addSparePart(data);
         }
         setIsSparePartEditModalOpen(false);
@@ -507,6 +581,7 @@ const App: React.FC = () => {
                         onMachineSelect={setSelectedMachineId}
                         onAddMachine={handleOpenAddMachineModal}
                         onEditMachine={handleOpenEditMachineModal}
+                        onUpdateMachinePosition={handleUpdateMachinePosition}
                     />
                 </section>
             );
@@ -583,7 +658,7 @@ const App: React.FC = () => {
                     <div className="lg:col-span-2">
                         <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('downtimeParetoTitle')}</h2>
                         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
-                            <DowntimeParetoChart data={data.downtime.downtimePareto} />
+                            <DowntimeParetoChart data={data.downtime.downtimePareto} theme={theme} />
                         </div>
                     </div>
                     <div className="lg:col-span-2">
@@ -655,37 +730,37 @@ const App: React.FC = () => {
                                 <button onClick={() => setMaintenanceSubTab('dashboard')} className={subTabClass('dashboard')}>
                                     <LayoutDashboard size={16} /> {t('maintKpis')}
                                 </button>
+                                <button onClick={() => setMaintenanceSubTab('mcPartInventory')} className={subTabClass('mcPartInventory')}>
+                                    <PackageSearch size={16} /> {t('mcPartInventory')}
+                                </button>
+                                 <button onClick={() => setMaintenanceSubTab('purchaseOrders')} className={subTabClass('purchaseOrders')}>
+                                    <Truck size={16} /> {t('purchaseOrders')}
+                                </button>
                                 <button onClick={() => setMaintenanceSubTab('pmSchedule')} className={subTabClass('pmSchedule')}>
                                     <CalendarClock size={16} /> {t('pmSchedule')}
-                                </button>
-                                <button onClick={() => setMaintenanceSubTab('inventory')} className={subTabClass('inventory')}>
-                                    <PackageSearch size={16} /> {t('sparePartsTitle')}
                                 </button>
                             </nav>
                         </div>
                         {maintenanceSubTab === 'dashboard' ? (
                             <MaintenanceDashboard 
-                                data={{
-                                    records: data.maintenanceOrders,
-                                    kpis: data.maintenance.kpis,
-                                    schedule: data.maintenance.schedule,
-                                    spareParts: data.maintenance.spareParts,
-                                    lowStockParts: data.maintenance.lowStockParts,
-                                }}
+                                data={data.maintenance}
                                 onOpenModal={handleOpenCreateMaintOrderModal}
-                                onNavigateToInventory={() => setMaintenanceSubTab('inventory')}
+                                onNavigateToInventory={() => setMaintenanceSubTab('mcPartInventory')}
                                 onNavigateToSchedule={() => setMaintenanceSubTab('pmSchedule')}
+                                theme={theme}
+                                onCreatePo={handleOpenMcPartRequestModal}
                             />
-                        ) : maintenanceSubTab === 'inventory' ? (
+                        ) : maintenanceSubTab === 'mcPartInventory' ? (
                             <SparePartsInventory 
                                 parts={data.maintenance.spareParts} 
-                                allMaintenanceRecords={data.maintenanceOrders}
                                 onPartSelect={handleOpenSparePartDetails}
                                 onAddNewPart={() => handleOpenSparePartEditModal(null)}
                                 onEditPart={handleOpenSparePartEditModal}
                                 onToggleFlag={handleToggleFlagForOrder}
                                 onCreateRequest={handleOpenMcPartRequestModal}
                             />
+                        ) : maintenanceSubTab === 'purchaseOrders' ? (
+                            <McPartPurchaseOrders orders={data.maintenance.mcPartOrders} t={t} />
                         ) : (
                             <MaintenanceScheduleView 
                                 schedule={data.maintenance.pmSchedule}

@@ -148,6 +148,7 @@ export const vi = {
   analysisFailed: 'Phân Tích Thất Bại',
   tryAgain: 'Thử Lại',
   regenerate: 'Tạo Lại',
+  others: 'Khác',
   
   // --- NEW ERROR LOG MODULE ---
   // Error Log Table
@@ -247,11 +248,7 @@ export const vi = {
   partsUsed: 'Phụ tùng đã sử dụng',
   partCode: 'Mã Phụ tùng',
   name: 'Tên',
-  qtyOnHand: 'SL tồn kho',
   reorderPoint: 'Điểm đặt hàng lại',
-  qtyOnOrder: 'SL đang đặt hàng',
-  orderDate: 'Ngày đặt hàng',
-  expectedArrival: 'Ngày dự kiến',
   location: 'Vị trí',
   sparePartsTitle: 'Kho Phụ tùng',
   searchByCodeName: 'Tìm theo mã, tên, vị trí...',
@@ -335,6 +332,25 @@ export const vi = {
   createWorkOrder: 'Tạo Lệnh CV',
   pmType: 'Loại PM',
 
+  // New MC Part Inventory Management
+  mcPartInventory: 'Kho MC Part',
+  purchaseOrders: 'Đơn Đặt Hàng',
+  available: 'Khả dụng',
+  inTransit: 'Đang về',
+  reserved: 'Đã đặt',
+  used: 'Đã dùng',
+  safetyStock: 'Tồn kho an toàn',
+  note: 'Ghi chú',
+  sufficient: 'Đủ',
+  almostOut: 'Gần hết',
+  needToOrder: 'Cần đặt hàng',
+  orderDate: 'Ngày đặt',
+  expectedDate: 'Ngày dự kiến',
+  supplier: 'Nhà cung cấp',
+  in_transit: 'Đang vận chuyển',
+  delayed: 'Bị trễ',
+  received: 'Đã nhận',
+
   // DB Schema Panel Descriptions
   userDesc: 'Bảng chính cho người dùng hệ thống. Lưu trữ thông tin đăng nhập và vai trò.',
   shiftDesc: 'Xác định các ca làm việc trong nhà máy.',
@@ -362,6 +378,26 @@ export const vi = {
   actualValue: 'Giá trị Thực tế',
   allRequiredChecked: 'Tất cả các mục phải được kiểm tra để gửi.',
   submitChecklist: 'Gửi Danh Sách Kiểm Tra',
+
+  // New Maintenance Dashboard from PRD
+  breakdownCount: 'Số lần hỏng',
+  maintenanceKpisByMachine: 'KPI Bảo trì Chi tiết theo Máy',
+  totalBreakdowns: 'Tổng số lần hỏng',
+  totalDowntime_short: 'Tổng Dừng máy (phút)',
+  alert: 'Cảnh báo',
+  warning: 'Lưu ý',
+  normal: 'Bình thường',
+  mttrTrend: 'Xu hướng MTTR & MTBF',
+  downtimeCauseAnalysis: 'Phân tích Nguyên nhân Dừng máy',
+  count: 'Số lần',
+  totalTime: 'Tổng thời gian (phút)',
+  mainImpact: 'Ảnh hưởng chính',
+  createPO: 'Tạo YC Mua hàng',
+  stock: 'Tồn kho',
+  minStock: 'Tồn kho min',
+  pmTasks: 'Công việc BTĐK',
+  assignedTo: 'Phụ trách',
+  dueDate: 'Hạn chót',
 };
 
 export const en = {
@@ -509,6 +545,7 @@ export const en = {
   analysisFailed: 'Analysis Failed',
   tryAgain: 'Try Again',
   regenerate: 'Regenerate',
+  others: 'Others',
 
   // --- NEW ERROR LOG MODULE ---
   // Error Log Table
@@ -607,11 +644,7 @@ export const en = {
   partsUsed: 'Parts Used',
   partCode: 'Part Code',
   name: 'Name',
-  qtyOnHand: 'Qty on Hand',
   reorderPoint: 'Reorder Point',
-  qtyOnOrder: 'Qty on Order',
-  orderDate: 'Order Date',
-  expectedArrival: 'Expected Arrival',
   location: 'Location',
   sparePartsTitle: 'Spare Parts Inventory',
   searchByCodeName: 'Search by code, name, location...',
@@ -695,6 +728,25 @@ export const en = {
   createWorkOrder: 'Create Work Order',
   pmType: 'PM Type',
 
+  // New MC Part Inventory Management
+  mcPartInventory: 'MC Part Inventory',
+  purchaseOrders: 'Purchase Orders',
+  available: 'Available',
+  inTransit: 'In-Transit',
+  reserved: 'Reserved',
+  used: 'Used (Period)',
+  safetyStock: 'Safety Stock',
+  note: 'Note',
+  sufficient: 'Sufficient',
+  almostOut: 'Almost Out',
+  needToOrder: 'Need to Order',
+  orderDate: 'Order Date',
+  expectedDate: 'Expected Date',
+  supplier: 'Supplier',
+  in_transit: 'In Transit',
+  delayed: 'Delayed',
+  received: 'Received',
+
   // DB Schema Panel Descriptions
   userDesc: 'Master table for system users. Stores login information and roles.',
   shiftDesc: 'Defines the working shifts within the factory.',
@@ -722,4 +774,24 @@ export const en = {
   actualValue: 'Actual Value',
   allRequiredChecked: 'All items must be checked to submit.',
   submitChecklist: 'Submit Checklist',
+
+  // New Maintenance Dashboard from PRD
+  breakdownCount: 'Breakdown Count',
+  maintenanceKpisByMachine: 'Detailed Maintenance KPIs by Machine',
+  totalBreakdowns: 'Total Breakdowns',
+  totalDowntime_short: 'Total Downtime (min)',
+  alert: 'Alert',
+  warning: 'Warning',
+  normal: 'Normal',
+  mttrTrend: 'MTTR & MTBF Trend',
+  downtimeCauseAnalysis: 'Downtime Cause Analysis',
+  count: 'Count',
+  totalTime: 'Total Time (min)',
+  mainImpact: 'Main Impact',
+  createPO: 'Create PO',
+  stock: 'Stock',
+  minStock: 'Min Stock',
+  pmTasks: 'PM Tasks',
+  assignedTo: 'Assigned To',
+  dueDate: 'Due Date',
 };

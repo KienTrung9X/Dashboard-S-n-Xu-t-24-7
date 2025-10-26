@@ -10,17 +10,18 @@ interface ShopFloorLayoutProps {
     onMachineSelect: (machineId: string) => void;
     onAddMachine: () => void;
     onEditMachine: (machine: MachineInfo) => void;
+    onUpdateMachinePosition: (machineId: number, newPosition: { x: number, y: number }) => void;
 }
 
 type MergedMachine = MachineInfo & {
     statusData: MachineStatusData;
 };
 
-const statusConfig: Record<string, { bgColor: string; animationClass?: string; labelKey: string }> = {
-    Running: { bgColor: 'bg-green-600', labelKey: 'running' },
-    Stopped: { bgColor: 'bg-yellow-600', labelKey: 'stopped' },
-    Error: { bgColor: 'bg-red-600', animationClass: 'animate-error-highlight', labelKey: 'error' },
-    Inactive: { bgColor: 'bg-gray-600', labelKey: 'inactive' },
+const statusConfig: Record<string, { dotClass: string; animationClass?: string; labelKey: string }> = {
+    Running: { dotClass: 'bg-green-500', labelKey: 'running' },
+    Stopped: { dotClass: 'bg-yellow-500', labelKey: 'stopped' },
+    Error: { dotClass: 'bg-red-500', animationClass: 'animate-pulse', labelKey: 'error' },
+    Inactive: { dotClass: 'bg-gray-500', labelKey: 'inactive' },
 };
 
 const MachineNode: React.FC<{ 
@@ -28,7 +29,7 @@ const MachineNode: React.FC<{
     position: { x: number, y: number };
     onSelect: (id: string) => void; 
     onEdit: (machine: MachineInfo) => void;
-    onMouseDown: (e: React.MouseEvent, machineId: string) => void;
+    onMouseDown: (e: React.MouseEvent, machine: MergedMachine) => void;
 }> = ({ machine, position, onSelect, onEdit, onMouseDown }) => {
     const { t } = useTranslation();
     const config = statusConfig[machine.statusData.status];
@@ -37,16 +38,19 @@ const MachineNode: React.FC<{
 
     return (
         <div
-            className="absolute transform -translate-x-1/2 -translate-y-1/2 group"
+            className="absolute transform -translate-x-1/2 -translate-y-1/2 group cursor-grab"
             style={{ top: `${position.y}%`, left: `${position.x}%` }}
-            onMouseDown={(e) => onMouseDown(e, machine.MACHINE_ID)}
+            onMouseDown={(e) => onMouseDown(e, machine)}
         >
             <div
                 onClick={() => onSelect(machine.MACHINE_ID)}
-                className={`w-20 h-14 rounded-md shadow-lg flex flex-col items-center justify-center text-white cursor-grab transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 focus:ring-cyan-500 border-2 ${config.bgColor} ${config.animationClass ? `border-transparent ${config.animationClass}` : 'border-gray-900/20'}`}
+                className={`w-20 h-14 rounded-md shadow-lg flex flex-col items-center justify-center transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900 focus:ring-cyan-500 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:border-cyan-500 dark:hover:border-cyan-400 ${machine.statusData.status === 'Error' ? 'animate-error-highlight border-red-500' : ''}`}
             >
-                <span className="font-bold text-base">{machine.MACHINE_ID}</span>
-                <span className="text-xs opacity-80">{t(config.labelKey as any)}</span>
+                <div className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${config.dotClass} ${config.animationClass || ''}`}></span>
+                    <span className="font-bold text-base text-gray-800 dark:text-white">{machine.MACHINE_ID}</span>
+                </div>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{t(config.labelKey as any)}</span>
             </div>
             {/* Tooltip */}
             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 bg-gray-900 text-white text-xs rounded-lg py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 text-center">
@@ -70,10 +74,10 @@ const MachineNode: React.FC<{
 };
 
 
-const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineStatus, onMachineSelect, onAddMachine, onEditMachine }) => {
+const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineStatus, onMachineSelect, onAddMachine, onEditMachine, onUpdateMachinePosition }) => {
     const { t } = useTranslation();
     const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
-    const [draggedMachine, setDraggedMachine] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
+    const [draggedMachine, setDraggedMachine] = useState<{ id: string; offsetX: number; offsetY: number; machineInfo: MergedMachine } | null>(null);
     const layoutRefs = useRef<Record<string, HTMLDivElement | null>>({});
     
     useEffect(() => {
@@ -84,16 +88,16 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
         setPositions(initialPositions);
     }, [allMachines]);
 
-    const handleMouseDown = (e: React.MouseEvent, machineId: string) => {
+    const handleMouseDown = (e: React.MouseEvent, machine: MergedMachine) => {
         e.preventDefault();
-        const node = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+        const node = e.currentTarget as HTMLElement;
         const rect = node.getBoundingClientRect();
         
         // Calculate offset from top-left of the node, in pixels
         const offsetX = e.clientX - rect.left;
         const offsetY = e.clientY - rect.top;
 
-        setDraggedMachine({ id: machineId, offsetX, offsetY });
+        setDraggedMachine({ id: machine.MACHINE_ID, offsetX, offsetY, machineInfo: machine });
     };
 
     const handleMouseMove = (e: React.MouseEvent, area: string) => {
@@ -101,13 +105,20 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
         
         const layoutRect = layoutRefs.current[area]!.getBoundingClientRect();
 
+        const nodeWidth = 80; // w-20 is 5rem
+        const nodeHeight = 56; // h-14 is 3.5rem
+
         // Calculate new top-left position in pixels, relative to the layout container
-        let newX = e.clientX - layoutRect.left - draggedMachine.offsetX;
-        let newY = e.clientY - layoutRect.top - draggedMachine.offsetY;
+        let newX_px = e.clientX - layoutRect.left - draggedMachine.offsetX;
+        let newY_px = e.clientY - layoutRect.top - draggedMachine.offsetY;
+        
+        // Convert to center position in pixels
+        const newCenterX_px = newX_px + nodeWidth / 2;
+        const newCenterY_px = newY_px + nodeHeight / 2;
         
         // Convert to percentage
-        const newXPercent = (newX / layoutRect.width) * 100;
-        const newYPercent = (newY / layoutRect.height) * 100;
+        const newXPercent = (newCenterX_px / layoutRect.width) * 100;
+        const newYPercent = (newCenterY_px / layoutRect.height) * 100;
 
         // Clamp values to stay within bounds (e.g., 5% to 95% to avoid hiding the node)
         const clampedX = Math.max(5, Math.min(95, newXPercent));
@@ -120,8 +131,13 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
     };
 
     const handleMouseUp = () => {
-        setDraggedMachine(null);
-        // In a real app, you would call a prop here to persist the new positions
+        if (draggedMachine) {
+            const finalPosition = positions[draggedMachine.id];
+            if(finalPosition) {
+                onUpdateMachinePosition(draggedMachine.machineInfo.id, finalPosition);
+            }
+            setDraggedMachine(null);
+        }
     };
     
     const machinesByArea = useMemo(() => {
