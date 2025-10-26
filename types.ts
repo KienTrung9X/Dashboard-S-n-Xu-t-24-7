@@ -1,4 +1,4 @@
-
+// types.ts
 
 export interface MachineInfo {
   MACHINE_ID: string;
@@ -7,6 +7,8 @@ export interface MachineInfo {
   IDEAL_CYCLE_TIME: number; // minutes per unit
   DESIGN_SPEED: number; // units per minute
   STATUS: 'active' | 'inactive';
+  x?: number; // X-coordinate percentage for shop floor layout
+  y?: number; // Y-coordinate percentage for shop floor layout
 }
 
 export interface ProductionDaily {
@@ -197,19 +199,42 @@ export interface DowntimeAnalysis {
   uniqueDowntimeReasons: string[];
 }
 
+// New interface for the detailed defect analysis tab
+export interface DefectAnalysis {
+    defectsBySeverity: DataPoint[];
+    defectsByStatus: DataPoint[];
+    defectsByCategory: DataPoint[];
+}
+
+
+// New interface for machine status on the shop floor layout
+export interface MachineStatusData {
+    machineId: string;
+    status: 'Running' | 'Stopped' | 'Error' | 'Inactive';
+    oee: number | null;
+    lineId: string;
+}
+
+
 // The main, fully-structured data object for the dashboard
 export interface DashboardData {
   // Raw data for detailed tables and modals
   productionLog: ProductionDaily[];
   downtimeRecords: DowntimeRecord[];
+  allMachineInfo: MachineInfo[]; // Added for layout component
+  allDefectRecords: DefectRecord[]; // Added for new defect log table
 
   // Data for filter controls
   availableLines: string[];
   availableMachines: string[];
+
+  // Real-time status for shop floor map
+  machineStatus: MachineStatusData[];
 
   // Processed data for each dashboard section
   summary: OverallSummary;
   performance: PerformanceAnalysis;
   quality: QualityAnalysis;
   downtime: DowntimeAnalysis;
+  defectAnalysis: DefectAnalysis; // New section
 }

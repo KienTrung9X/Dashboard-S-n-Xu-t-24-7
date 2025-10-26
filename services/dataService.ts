@@ -1,11 +1,9 @@
-
-
-import { ProductionDaily, DowntimeRecord, DefectRecord, DashboardData, DataPoint, TrendData, Top5DefectLine, Top5DowntimeMachine, StackedBarDataPoint, BoxplotDataPoint, HeatmapDataPoint, MachineInfo, NewProductionData, DefectAdjustmentLog } from '../types';
+import { ProductionDaily, DowntimeRecord, DefectRecord, DashboardData, DataPoint, TrendData, Top5DefectLine, Top5DowntimeMachine, StackedBarDataPoint, BoxplotDataPoint, HeatmapDataPoint, MachineInfo, NewProductionData, DefectAdjustmentLog, MachineStatusData } from '../types';
 import { quantile } from 'simple-statistics';
 
 const SHIFTS: ('A' | 'B' | 'C')[] = ['A', 'B', 'C'];
 
-const LINE_TO_AREA_MAP: Record<string, string> = {
+export const LINE_TO_AREA_MAP: Record<string, string> = {
     '31': 'Area Stamping',
     '32': 'Area Assembly',
     '41': 'Area Painting',
@@ -14,12 +12,12 @@ const LINE_TO_AREA_MAP: Record<string, string> = {
 };
 
 export const machineInfoData: MachineInfo[] = [
-    { MACHINE_ID: 'M01', MACHINE_NAME: 'Assembler Alpha', LINE_ID: '32', IDEAL_CYCLE_TIME: 0.045, DESIGN_SPEED: 22, STATUS: 'active' },
-    { MACHINE_ID: 'M02', MACHINE_NAME: 'Assembler Beta', LINE_ID: '32', IDEAL_CYCLE_TIME: 0.045, DESIGN_SPEED: 22, STATUS: 'active' },
-    { MACHINE_ID: 'M03', MACHINE_NAME: 'Stamping Press 1', LINE_ID: '31', IDEAL_CYCLE_TIME: 0.06, DESIGN_SPEED: 17, STATUS: 'active' },
-    { MACHINE_ID: 'M04', MACHINE_NAME: 'Paint Booth A', LINE_ID: '41', IDEAL_CYCLE_TIME: 0.25, DESIGN_SPEED: 4, STATUS: 'inactive' },
-    { MACHINE_ID: 'M05', MACHINE_NAME: 'Paint Booth B', LINE_ID: '42', IDEAL_CYCLE_TIME: 0.24, DESIGN_SPEED: 4, STATUS: 'active' },
-    { MACHINE_ID: 'M06', MACHINE_NAME: 'Finishing Line 1', LINE_ID: '51', IDEAL_CYCLE_TIME: 0.08, DESIGN_SPEED: 12, STATUS: 'active' },
+    { MACHINE_ID: 'M03', MACHINE_NAME: 'Stamping Press 1', LINE_ID: '31', IDEAL_CYCLE_TIME: 0.06, DESIGN_SPEED: 17, STATUS: 'active', x: 10, y: 30 },
+    { MACHINE_ID: 'M01', MACHINE_NAME: 'Assembler Alpha', LINE_ID: '32', IDEAL_CYCLE_TIME: 0.045, DESIGN_SPEED: 22, STATUS: 'active', x: 30, y: 20 },
+    { MACHINE_ID: 'M02', MACHINE_NAME: 'Assembler Beta', LINE_ID: '32', IDEAL_CYCLE_TIME: 0.045, DESIGN_SPEED: 22, STATUS: 'active', x: 30, y: 60 },
+    { MACHINE_ID: 'M04', MACHINE_NAME: 'Paint Booth A', LINE_ID: '41', IDEAL_CYCLE_TIME: 0.25, DESIGN_SPEED: 4, STATUS: 'inactive', x: 55, y: 30 },
+    { MACHINE_ID: 'M05', MACHINE_NAME: 'Paint Booth B', LINE_ID: '42', IDEAL_CYCLE_TIME: 0.24, DESIGN_SPEED: 4, STATUS: 'active', x: 55, y: 70 },
+    { MACHINE_ID: 'M06', MACHINE_NAME: 'Finishing Line 1', LINE_ID: '51', IDEAL_CYCLE_TIME: 0.08, DESIGN_SPEED: 12, STATUS: 'active', x: 80, y: 50 },
 ];
 
 // Expanded mock data to cover 30 days, multiple lines, machines, and areas
@@ -78,7 +76,7 @@ export let defectRecords: DefectRecord[] = Array.from({ length: 30 }).flatMap((_
         return {
             ...rec,
             LINE_ID: machine?.LINE_ID || 'N/A',
-            DEFECT_CATEGORY: 'Abnormal',
+            DEFECT_CATEGORY: index % 5 === 0 ? 'Fixed' : 'Abnormal',
             DESCRIPTION: `This is a sample detailed description for the defect '${rec.DEFECT_TYPE}' found on machine ${rec.MACHINE_ID}. Further analysis may be required.`,
             SEVERITY: index % 3 === 0 ? 'High' : index % 2 === 0 ? 'Medium' : 'Low',
             DISCOVERED_BY: 'Auto-generated',
@@ -193,11 +191,17 @@ export const getDashboardData = (
     selectedArea: string,
     selectedShift: 'all' | 'A' | 'B' | 'C',
     selectedStatus: 'all' | 'active' | 'inactive',
+    focusedLine: string | null,
     opts: { signal?: AbortSignal } = {}
 ): Promise<DashboardData> => {
     return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
             try {
+                // Base data selection for drill-down
+                const baseProductionData = focusedLine
+                    ? productionDailyData.filter(p => p.LINE_ID === focusedLine)
+                    : productionDailyData;
+
                  // Determine which machines to include based on status
                 const allowedMachineIdsByStatus = new Set(
                     machineInfoData
@@ -210,7 +214,7 @@ export const getDashboardData = (
                     ? Object.keys(LINE_TO_AREA_MAP)
                     : Object.keys(LINE_TO_AREA_MAP).filter(line => LINE_TO_AREA_MAP[line] === selectedArea);
 
-                const filteredProduction = productionDailyData.filter(p =>
+                const filteredProduction = baseProductionData.filter(p =>
                     p.COMP_DAY >= startDate &&
                     p.COMP_DAY <= endDate &&
                     linesInArea.includes(p.LINE_ID) &&
@@ -231,6 +235,58 @@ export const getDashboardData = (
                     d.COMP_DAY <= endDate &&
                     machineIdsInFilter.includes(d.MACHINE_ID)
                 );
+
+                // --- Machine Status Calculation for Shop Floor Layout ---
+                const productionDataMap = new Map(filteredProduction.map(p => [`${p.MACHINE_ID}-${p.COMP_DAY}-${p.SHIFT}`, p]));
+                const dailyAggregatedProd = new Map<string, ProductionDaily>();
+
+                // Aggregate daily data if in range mode, otherwise use shift data
+                if (startDate !== endDate || selectedShift === 'all') {
+                    const machineDailyTotals = new Map<string, { oeeSum: number; downtimeSum: number; count: number }>();
+                    for (const p of filteredProduction) {
+                        const key = p.MACHINE_ID;
+                        if (!machineDailyTotals.has(key)) {
+                            machineDailyTotals.set(key, { oeeSum: 0, downtimeSum: 0, count: 0 });
+                        }
+                        const totals = machineDailyTotals.get(key)!;
+                        totals.oeeSum += p.OEE;
+                        totals.downtimeSum += p.DOWNTIME_MIN;
+                        totals.count++;
+                    }
+                    machineDailyTotals.forEach((totals, key) => {
+                        dailyAggregatedProd.set(key, {
+                            OEE: totals.oeeSum / totals.count,
+                            DOWNTIME_MIN: totals.downtimeSum,
+                        } as ProductionDaily);
+                    });
+                } else {
+                     filteredProduction.forEach(p => {
+                        dailyAggregatedProd.set(p.MACHINE_ID, p);
+                     });
+                }
+                
+                const machineStatus: MachineStatusData[] = machineInfoData.map(m => {
+                    const prodData = dailyAggregatedProd.get(m.MACHINE_ID);
+                    let status: MachineStatusData['status'] = 'Inactive';
+                    let oee: number | null = null;
+
+                    if (m.STATUS === 'active') {
+                        status = 'Stopped'; // Default for active machines with no production data
+                        if (prodData) {
+                            oee = prodData.OEE;
+                            if (prodData.OEE < 0.70) {
+                                status = 'Error';
+                            } else if (prodData.DOWNTIME_MIN > 60) {
+                                status = 'Stopped';
+                            } else {
+                                status = 'Running';
+                            }
+                        }
+                    }
+                    
+                    return { machineId: m.MACHINE_ID, status, oee, lineId: m.LINE_ID };
+                });
+
 
                 // Calculations
                 const totalProduction = filteredProduction.reduce((sum, p) => sum + p.ACT_PRO_QTY, 0);
@@ -419,13 +475,30 @@ export const getDashboardData = (
                     lineId, ...data, defectRate: data.totalProduction > 0 ? data.totalDefects / data.totalProduction : 0,
                 }));
                 const top5DefectLines = [...qualityByLine].sort((a, b) => b.defectRate - a.defectRate).slice(0, 5);
+                
+                // --- Detailed Defect Analysis Calculations ---
+                const aggregateDefects = (key: keyof DefectRecord): DataPoint[] => {
+                    const aggregation = filteredDefects.reduce((acc, defect) => {
+                        const group = defect[key] as string;
+                        acc[group] = (acc[group] || 0) + defect.DEFECT_QTY;
+                        return acc;
+                    }, {} as Record<string, number>);
+                    return Object.entries(aggregation).map(([name, value]) => ({ name, value }));
+                };
+                const defectsBySeverity = aggregateDefects('SEVERITY');
+                const defectsByStatus = aggregateDefects('STATUS');
+                const defectsByCategory = aggregateDefects('DEFECT_CATEGORY');
 
 
-                const result: DashboardData = {
+                // Final data object
+                const finalData: DashboardData = {
                     productionLog,
                     downtimeRecords: filteredDowntime,
-                    availableLines: [...new Set(productionDailyData.map(p => p.LINE_ID))],
+                    allMachineInfo: machineInfoData,
+                    allDefectRecords: filteredDefects.sort((a,b) => new Date(b.COMP_DAY).getTime() - new Date(a.COMP_DAY).getTime()),
+                    availableLines: ['all', ...Object.keys(LINE_TO_AREA_MAP)],
                     availableMachines: [...new Set(productionDailyData.map(p => p.MACHINE_ID))],
+                    machineStatus,
                     summary: {
                         totalProduction,
                         totalDefects,
@@ -439,33 +512,40 @@ export const getDashboardData = (
                         oeeByLine,
                     },
                     performance: {
-                       sevenDayTrend,
-                       productionBoxplot,
-                       oeeHeatmap,
+                        sevenDayTrend,
+                        productionBoxplot,
+                        oeeHeatmap,
                     },
                     quality: {
-                       defectPareto,
-                       defectRateTrend,
-                       defectTrend,
-                       top5DefectLines,
+                        defectPareto,
+                        defectRateTrend,
+                        defectTrend,
+                        top5DefectLines
                     },
                     downtime: {
-                       downtimePareto,
-                       downtimeTrend,
-                       downtimeByCategory: downtimePareto.slice(0, 5), // simplified for pie chart
-                       top5DowntimeMachines,
-                       downtimeByLine,
-                       uniqueDowntimeReasons: [...new Set(downtimePareto.map(d => d.name))],
+                        downtimePareto,
+                        downtimeTrend,
+                        downtimeByCategory: downtimeParetoData,
+                        top5DowntimeMachines,
+                        downtimeByLine,
+                        uniqueDowntimeReasons: [...new Set(filteredDowntime.map(d => d.DOWNTIME_REASON))]
+                    },
+                    defectAnalysis: {
+                        defectsBySeverity,
+                        defectsByStatus,
+                        defectsByCategory
                     }
                 };
                 
-                resolve(result);
-
+                resolve(finalData);
             } catch (e) {
+                if (opts.signal?.aborted) {
+                    console.log('Data fetch aborted');
+                    return;
+                }
                 reject(e);
             }
-
-        }, 1000); // Simulate network delay
+        }, 300); // Simulate network latency
 
         if (opts.signal) {
             opts.signal.addEventListener('abort', () => {

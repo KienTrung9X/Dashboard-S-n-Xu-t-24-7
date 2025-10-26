@@ -9,9 +9,10 @@ interface SimpleBarChartProps {
   fillColor: string | ((value: number) => string);
   isPercentage?: boolean;
   theme?: 'light' | 'dark';
+  onBarClick?: (payload: any) => void;
 }
 
-const SimpleBarChart: React.FC<SimpleBarChartProps> = ({ data, xAxisKey, barKey, fillColor, isPercentage = false, theme = 'light' }) => {
+const SimpleBarChart: React.FC<SimpleBarChartProps> = ({ data, xAxisKey, barKey, fillColor, isPercentage = false, theme = 'light', onBarClick }) => {
   if (!data || data.length === 0) {
     return <div className="flex items-center justify-center h-full text-gray-500">No data available.</div>;
   }
@@ -28,7 +29,15 @@ const SimpleBarChart: React.FC<SimpleBarChartProps> = ({ data, xAxisKey, barKey,
   return (
     <div style={{ width: '100%', height: 300 }}>
       <ResponsiveContainer>
-        <BarChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+        <BarChart 
+          data={data} 
+          margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+          onClick={(chartData) => {
+              if (chartData && chartData.activePayload && chartData.activePayload.length > 0 && onBarClick) {
+                  onBarClick(chartData.activePayload[0].payload);
+              }
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
           <XAxis dataKey={xAxisKey} tick={{ fill: tickColor }} />
           <YAxis tick={{ fill: tickColor }} tickFormatter={isPercentage ? (val) => `${(val * 100).toFixed(0)}%` : undefined}/>
@@ -37,7 +46,7 @@ const SimpleBarChart: React.FC<SimpleBarChartProps> = ({ data, xAxisKey, barKey,
             labelStyle={labelStyle}
             formatter={isPercentage ? (val: number) => [`${(val * 100).toFixed(1)}%`, 'Value'] : undefined}
           />
-          <Bar dataKey={barKey} fill={isFillColorFn ? undefined : fillColor}>
+          <Bar dataKey={barKey} fill={isFillColorFn ? undefined : fillColor} cursor={onBarClick ? "pointer" : "default"}>
              {isFillColorFn && data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={(fillColor as (value: number) => string)(entry[barKey as keyof DataPoint] as number)} />
             ))}
