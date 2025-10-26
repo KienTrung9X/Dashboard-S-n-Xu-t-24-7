@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 // FIX: Replaced non-existent 'DefectData' with 'DataPoint' to match the expected data structure.

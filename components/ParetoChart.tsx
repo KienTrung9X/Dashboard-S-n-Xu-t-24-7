@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import {
   ResponsiveContainer,
@@ -12,6 +13,7 @@ import {
   Legend,
 } from 'recharts';
 import { DataPoint } from '../types';
+import { useTranslation } from '../i18n/LanguageContext';
 
 interface ParetoChartProps {
   data: (DataPoint & { cumulative?: number })[];
@@ -23,6 +25,7 @@ interface ParetoChartProps {
 }
 
 const ParetoChart: React.FC<ParetoChartProps> = ({ data, barKey, lineKey, barColor, lineColor, theme = 'light' }) => {
+  const { t } = useTranslation();
   if (!data || data.length === 0) {
     return <div className="flex items-center justify-center h-full text-gray-500">No data available.</div>;
   }

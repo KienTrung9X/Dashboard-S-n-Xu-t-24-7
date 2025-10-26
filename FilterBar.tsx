@@ -1,4 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
+import { useTranslation } from './i18n/LanguageContext';
+import { Filter, ChevronDown, ChevronUp } from 'lucide-react';
 
 type Shift = 'all' | 'A' | 'B' | 'C';
 type DateSelectionMode = 'single' | 'range' | 'last7' | 'lastWeek' | 'last30';
@@ -91,6 +93,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
   onPerformanceThresholdChange,
   onQualityThresholdChange,
 }) => {
+  const { t } = useTranslation();
+  const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
+  const [isThresholdsExpanded, setIsThresholdsExpanded] = useState(false);
   const lastCustomRangeRef = useRef<{ start: string; end: string }>({ start: startDate, end: endDate });
   const lastSingleDateRef = useRef<string>(startDate);
 
@@ -219,125 +224,190 @@ const FilterBar: React.FC<FilterBarProps> = ({
   const areDatesDisabled = dateSelectionMode === 'last7' || dateSelectionMode === 'last30' || dateSelectionMode === 'lastWeek';
   const isShiftDisabled = dateSelectionMode !== 'single';
 
-  return (
-    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg">
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
-        <FilterField label="Date Mode" htmlFor="date-mode-select">
-          <select
-              id="date-mode-select"
-              value={dateSelectionMode}
-              onChange={(e) => handleModeChange(e.target.value as DateSelectionMode)}
-              className={formInputClass}
-          >
-              <option value="single">Single Day</option>
-              <option value="range">Custom Range</option>
-              <option value="last7">Last 7 Days</option>
-              <option value="lastWeek">Last Week</option>
-              <option value="last30">Last 30 Days</option>
-          </select>
-        </FilterField>
-        
-        <FilterField 
-          label={dateSelectionMode !== 'single' ? 'Start Date' : 'Date'} 
-          htmlFor="start-date-filter"
-          className={dateSelectionMode === 'single' ? 'lg:col-span-2' : ''}
-        >
-          <input
-            type="date"
-            id="start-date-filter"
-            value={startDate}
-            onChange={(e) => handleDateChange(e, true)}
-            disabled={areDatesDisabled}
-            className={formInputClass}
-          />
-        </FilterField>
-        
-        {dateSelectionMode !== 'single' && (
-          <FilterField label="End Date" htmlFor="end-date-filter" className="animate-fade-in-up">
-            <input
-              type="date"
-              id="end-date-filter"
-              value={endDate}
-              min={startDate}
-              onChange={(e) => handleDateChange(e, false)}
-              disabled={areDatesDisabled}
-              className={formInputClass}
-            />
-          </FilterField>
-        )}
+  const getActiveFilterSummary = () => {
+    const summaryItems = [];
+    if (dateSelectionMode === 'single') {
+        summaryItems.push(startDate);
+    } else if (dateSelectionMode === 'range') {
+        summaryItems.push(`${startDate} to ${endDate}`);
+    } else {
+        summaryItems.push(t(dateSelectionMode as any));
+    }
 
-        <FilterField label="Khu Vực" htmlFor="area-filter">
-          <select
-            id="area-filter"
-            value={selectedArea}
-            onChange={handleAreaChange}
-            className={formInputClass}
-          >
-            {availableAreas.map(area => (
-              <option key={area} value={area}>
-                {area === 'all' ? 'Tất cả Khu vực (All Areas)' : area}
-              </option>
-            ))}
-          </select>
-        </FilterField>
-        
-        <FilterField label="Ca" htmlFor="shift-filter">
-          <select
-            id="shift-filter"
-            value={selectedShift}
-            onChange={handleShiftChange}
-            disabled={isShiftDisabled}
-            className={`${formInputClass} disabled:bg-gray-200/50 dark:disabled:bg-gray-700/50 disabled:text-gray-400 dark:disabled:text-gray-500`}
-          >
-            <option value="all">Cả Ngày</option>
-            <option value="A">Ca A (06:00 - 14:00)</option>
-            <option value="B">Ca B (14:00 - 22:00)</option>
-            <option value="C">Ca C (22:00 - 06:00)</option>
-          </select>
-        </FilterField>
-        
-        <FilterField label="Status" htmlFor="status-filter">
-          <select
-            id="status-filter"
-            value={selectedStatus}
-            onChange={handleStatusChange}
-            className={formInputClass}
-          >
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </FilterField>
-      </div>
-      
-      {/* Bottom row for secondary settings and actions */}
-      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row flex-wrap items-center gap-4">
-        <details className="flex-grow p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
-          <summary className="font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-            Target Thresholds
-          </summary>
-          <div className="pt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <ThresholdInput label="OEE" id="oee-threshold" value={oeeThreshold} onChange={onOeeThresholdChange} />
-            <ThresholdInput label="Availability" id="availability-threshold" value={availabilityThreshold} onChange={onAvailabilityThresholdChange} />
-            <ThresholdInput label="Performance" id="performance-threshold" value={performanceThreshold} onChange={onPerformanceThresholdChange} />
-            <ThresholdInput label="Quality" id="quality-threshold" value={qualityThreshold} onChange={onQualityThresholdChange} />
-          </div>
-        </details>
-        
-        <div className="sm:ml-auto">
-          <button
-              onClick={onClearFilters}
-              className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors flex items-center gap-2"
-              title="Reset all filters and thresholds to default"
-          >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5" />
-              </svg>
-              Clear Filters
-          </button>
+    if (selectedArea !== 'all') {
+        summaryItems.push(selectedArea);
+    }
+    if (selectedShift !== 'all') {
+        summaryItems.push(`${t('shift')} ${selectedShift}`);
+    }
+    if (selectedStatus !== 'all') {
+        summaryItems.push(t(selectedStatus as any));
+    }
+
+    if (summaryItems.length === 0) return '';
+    return summaryItems.join(' / ');
+  };
+
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg">
+      <div 
+        className="flex justify-between items-center p-4 cursor-pointer"
+        onClick={() => setIsExpanded(!isExpanded)}
+        role="button"
+        aria-expanded={isExpanded}
+        aria-controls="filter-content"
+      >
+        <div className="flex items-center gap-3">
+            <Filter size={20} className="text-cyan-500" />
+            <h3 className="font-semibold text-lg text-gray-800 dark:text-white">{t('filtersTitle')}</h3>
+        </div>
+        <div className="flex items-center gap-4">
+            {!isExpanded && (
+                <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:block truncate">
+                    {getActiveFilterSummary()}
+                </span>
+            )}
+            <button className="p-1 rounded-full text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
         </div>
       </div>
 
+      <div 
+        id="filter-content"
+        className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}
+      >
+        <div className="px-4 pb-4">
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
+              <FilterField label={t('dateMode')} htmlFor="date-mode-select">
+                <select
+                    id="date-mode-select"
+                    value={dateSelectionMode}
+                    onChange={(e) => handleModeChange(e.target.value as DateSelectionMode)}
+                    className={formInputClass}
+                >
+                    <option value="single">{t('singleDay')}</option>
+                    <option value="range">{t('customRange')}</option>
+                    <option value="last7">{t('last7Days')}</option>
+                    <option value="lastWeek">{t('lastWeek')}</option>
+                    <option value="last30">{t('last30Days')}</option>
+                </select>
+              </FilterField>
+              
+              <FilterField 
+                label={dateSelectionMode !== 'single' ? t('startDate') : t('date')} 
+                htmlFor="start-date-filter"
+                className={dateSelectionMode === 'single' ? 'lg:col-span-2' : ''}
+              >
+                <input
+                  type="date"
+                  id="start-date-filter"
+                  value={startDate}
+                  onChange={(e) => handleDateChange(e, true)}
+                  disabled={areDatesDisabled}
+                  className={formInputClass}
+                />
+              </FilterField>
+              
+              {dateSelectionMode !== 'single' && (
+                <FilterField label={t('endDate')} htmlFor="end-date-filter" className="animate-fade-in-up">
+                  <input
+                    type="date"
+                    id="end-date-filter"
+                    value={endDate}
+                    min={startDate}
+                    onChange={(e) => handleDateChange(e, false)}
+                    disabled={areDatesDisabled}
+                    className={formInputClass}
+                  />
+                </FilterField>
+              )}
+
+              <FilterField label={t('area')} htmlFor="area-filter">
+                <select
+                  id="area-filter"
+                  value={selectedArea}
+                  onChange={handleAreaChange}
+                  className={formInputClass}
+                >
+                  {availableAreas.map(area => (
+                    <option key={area} value={area}>
+                      {area === 'all' ? t('allAreas') : area}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+              
+              <FilterField label={t('shift')} htmlFor="shift-filter">
+                <select
+                  id="shift-filter"
+                  value={selectedShift}
+                  onChange={handleShiftChange}
+                  disabled={isShiftDisabled}
+                  className={`${formInputClass} disabled:bg-gray-200/50 dark:disabled:bg-gray-700/50 disabled:text-gray-400 dark:disabled:text-gray-500`}
+                >
+                  <option value="all">{t('allShifts')}</option>
+                  <option value="A">{t('shiftA')}</option>
+                  <option value="B">{t('shiftB')}</option>
+                  <option value="C">{t('shiftC')}</option>
+                </select>
+              </FilterField>
+              
+              <FilterField label={t('status')} htmlFor="status-filter">
+                <select
+                  id="status-filter"
+                  value={selectedStatus}
+                  onChange={handleStatusChange}
+                  className={formInputClass}
+                >
+                  <option value="all">{t('all')}</option>
+                  <option value="active">{t('active')}</option>
+                  <option value="inactive">{t('inactive')}</option>
+                </select>
+              </FilterField>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row flex-wrap items-center gap-4">
+               <div className="flex-grow rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700">
+                  <div
+                    className="flex justify-between items-center p-3 cursor-pointer select-none"
+                    onClick={() => setIsThresholdsExpanded(!isThresholdsExpanded)}
+                    role="button"
+                    aria-expanded={isThresholdsExpanded}
+                  >
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      {t('targetThresholds')}
+                    </span>
+                    {isThresholdsExpanded ? <ChevronUp size={18} className="text-gray-500" /> : <ChevronDown size={18} className="text-gray-500"/>}
+                  </div>
+                  <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isThresholdsExpanded ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <ThresholdInput label={t('oee')} id="oee-threshold" value={oeeThreshold} onChange={onOeeThresholdChange} />
+                      <ThresholdInput label={t('availability')} id="availability-threshold" value={availabilityThreshold} onChange={onAvailabilityThresholdChange} />
+                      <ThresholdInput label={t('performance')} id="performance-threshold" value={performanceThreshold} onChange={onPerformanceThresholdChange} />
+                      <ThresholdInput label={t('quality')} id="quality-threshold" value={qualityThreshold} onChange={onQualityThresholdChange} />
+                    </div>
+                  </div>
+                </div>
+              
+              <div className="sm:ml-auto">
+                <button
+                    onClick={onClearFilters}
+                    className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors flex items-center gap-2"
+                    title="Reset all filters and thresholds to default"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5" />
+                    </svg>
+                    {t('clearFilters')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

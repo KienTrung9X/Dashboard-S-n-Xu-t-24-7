@@ -35,29 +35,18 @@ const KpiCard: React.FC<KpiCardProps> = ({ title, value, unit = '%', precision =
       <div className="flex justify-between items-start">
         <div className="flex items-center gap-2">
             <h3 className="text-lg font-medium text-gray-500 dark:text-gray-400">{title}</h3>
-            {title === 'OEE' && (
+            {description && (
               <div className="relative group">
                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 dark:text-gray-500 cursor-help" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                 </svg>
                 <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 w-max max-w-xs bg-gray-900 text-white text-xs rounded-lg py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10">
-                    OEE = Availability * Performance * Quality
+                    {description}
                     <div className="absolute top-full left-1/2 transform -translate-x-1/2 -translate-y-px w-2 h-2 bg-gray-900 rotate-45"></div>
                 </div>
               </div>
             )}
         </div>
-        {description && (
-          <div className="relative group flex-shrink-0">
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 dark:text-gray-500 cursor-help" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
-            <div className="absolute bottom-full mb-2 -right-1/2 transform translate-x-1/2 w-60 bg-gray-900 text-white text-xs rounded-lg py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10">
-                {description}
-                <div className="absolute top-full right-1/2 transform translate-x-1/2 -translate-y-px w-2 h-2 bg-gray-900 rotate-45"></div>
-            </div>
-          </div>
-        )}
       </div>
       <p className={`text-5xl font-bold mt-2 ${valueColorClass}`}>
         {formattedValue}<span className={`text-3xl ${unitColorClass}`}>{unit}</span>

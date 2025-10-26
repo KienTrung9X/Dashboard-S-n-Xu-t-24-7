@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 // FIX: Added 'CartesianGrid' to the import from 'recharts' to resolve the error.
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, Legend, Cell, CartesianGrid } from 'recharts';

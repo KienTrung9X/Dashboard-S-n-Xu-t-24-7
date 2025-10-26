@@ -1,17 +1,90 @@
 import React, { useState, useMemo } from 'react';
-import { ProductionDaily } from '../types';
-import { defectRecords } from '../services/dataService';
+import { ProductionDaily, EnrichedDefectRecord, DefectType } from '../types';
+import { useTranslation } from '../i18n/LanguageContext';
+import { X, ExternalLink, Image as ImageIcon } from 'lucide-react';
 
 interface ProductionLogTableProps {
   data: ProductionDaily[];
   onMachineSelect: (machineId: string) => void;
-  onUpdateDefect: (prodId: number, newQty: number) => void;
   oeeThreshold: number;
-  uniqueDefectTypes: string[];
+  allDefectTypes: DefectType[];
+  allDefectRecords: EnrichedDefectRecord[];
 }
 
 type SortKey = keyof ProductionDaily | 'OEE'; // 'OEE' is explicitly included for clarity
 type SortDirection = 'ascending' | 'descending';
+
+// Popover component defined within the same file to avoid creating new files
+interface DefectDetailsPopoverProps {
+    defects: EnrichedDefectRecord[];
+    top: number;
+    left: number;
+    onClose: () => void;
+    onNavigate: (date: string, machineId: string, shift: 'A' | 'B' | 'C') => void;
+    t: (key: any) => string;
+}
+
+const DefectDetailsPopover: React.FC<DefectDetailsPopoverProps> = ({ defects, top, left, onClose, onNavigate, t }) => {
+    const handleNavigate = () => {
+        if (defects.length > 0) {
+            const firstDefect = defects[0];
+            onNavigate(firstDefect.work_date, firstDefect.MACHINE_ID, firstDefect.SHIFT);
+            onClose();
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-40" onClick={onClose}>
+            <div
+                className="absolute bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-600 p-0 flex flex-col w-96 max-h-96 animate-fade-in-up"
+                style={{
+                    top: `${top + 10}px`,
+                    left: `${left}px`,
+                    transform: 'translateX(-50%)',
+                    zIndex: 50,
+                }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <header className="flex-shrink-0 flex items-center justify-between p-3 border-b dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800">
+                    <h4 className="font-semibold text-gray-800 dark:text-white">{t('defectDetailsPopoverTitle')}</h4>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors">
+                        <X size={18} />
+                    </button>
+                </header>
+                <main className="p-3 overflow-y-auto space-y-3">
+                    {defects.map(defect => (
+                        <div key={defect.id} className="text-sm bg-gray-50 dark:bg-gray-700/50 p-2 rounded-md">
+                            <p className="font-bold">{defect.defect_type_name}: <span className="text-red-500 dark:text-red-400">{defect.quantity} pcs</span></p>
+                            <p className="text-gray-600 dark:text-gray-300"><span className="font-semibold">{t('cause')}:</span> {defect.cause_category}</p>
+                             {defect.note && <p className="text-gray-600 dark:text-gray-300 mt-1"><span className="font-semibold">{t('notes')}:</span> {defect.note}</p>}
+                             {defect.image_urls && defect.image_urls.length > 0 && (
+                                <div className="mt-2">
+                                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{t('attachedImages')}</p>
+                                    <div className="flex gap-2">
+                                        {defect.image_urls.map((url, index) => (
+                                            <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="relative group">
+                                                <img src={url} alt={`Defect ${index + 1}`} className="h-12 w-12 rounded object-cover border border-gray-300 dark:border-gray-600" />
+                                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <ImageIcon size={16} className="text-white" />
+                                                </div>
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </main>
+                <footer className="flex-shrink-0 p-3 border-t dark:border-gray-700 flex justify-end sticky bottom-0 bg-white dark:bg-gray-800">
+                     <button onClick={handleNavigate} className="text-sm bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-1.5 px-3 rounded-md transition-colors flex items-center gap-2">
+                        <ExternalLink size={14} />
+                        {t('viewInFullLog')}
+                    </button>
+                </footer>
+            </div>
+        </div>
+    );
+};
 
 
 const FilterInput: React.FC<{ value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder: string; label: string }> = ({ value, onChange, placeholder, label }) => (
@@ -27,14 +100,13 @@ const FilterInput: React.FC<{ value: string; onChange: (e: React.ChangeEvent<HTM
 );
 
 
-const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachineSelect, onUpdateDefect, oeeThreshold, uniqueDefectTypes }) => {
-  const [editingPopover, setEditingPopover] = useState<{
-    prodId: number;
-    originalQty: number;
+const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachineSelect, oeeThreshold, allDefectTypes, allDefectRecords }) => {
+  const { t } = useTranslation();
+  const [detailsPopover, setDetailsPopover] = useState<{
+    defects: EnrichedDefectRecord[];
     top: number;
     left: number;
   } | null>(null);
-  const [editValue, setEditValue] = useState('');
   
   // Filtering state
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,36 +121,20 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'OEE', direction: 'descending' });
 
 
-  const handleDoubleClick = (log: ProductionDaily, event: React.MouseEvent) => {
-    setEditingPopover({
-      prodId: log.Prod_ID,
-      originalQty: log.DEFECT_QTY,
-      top: event.clientY,
-      left: event.clientX,
-    });
-    setEditValue(String(log.DEFECT_QTY));
+  const handleDefectCellDoubleClick = (log: ProductionDaily, event: React.MouseEvent) => {
+    const defectsForLog = allDefectRecords.filter(
+      d => d.work_date === log.COMP_DAY && d.MACHINE_ID === log.MACHINE_ID && d.SHIFT === log.SHIFT
+    );
+  
+    if (defectsForLog.length > 0) {
+      setDetailsPopover({
+        defects: defectsForLog,
+        top: event.clientY,
+        left: event.clientX,
+      });
+    }
   };
 
-  const handleCancelEdit = () => {
-    setEditingPopover(null);
-    setEditValue('');
-  };
-
-  const handleConfirmEdit = () => {
-    if (!editingPopover) return;
-    const { prodId, originalQty } = editingPopover;
-    const newQty = parseInt(editValue, 10);
-    // Validate: must be a non-negative number
-    if (isNaN(newQty) || newQty < 0) {
-      handleCancelEdit();
-      return;
-    }
-    // Only trigger update if value has changed
-    if (newQty !== originalQty) {
-      onUpdateDefect(prodId, newQty);
-    }
-    handleCancelEdit();
-  };
 
   const handleClearFilters = () => {
       setSearchTerm('');
@@ -88,6 +144,29 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
       setMaxDefects('');
       setMinDowntime('');
       setMaxDowntime('');
+  };
+
+  // Helper to generate a unique key for each log row
+  const getLogKey = (log: { COMP_DAY: string; MACHINE_ID: string; SHIFT: 'A' | 'B' | 'C' }) => {
+    return `log-row-${log.COMP_DAY}-${log.MACHINE_ID}-${log.SHIFT}`;
+  };
+  
+  const handleScrollToLogEntry = (date: string, machineId: string, shift: 'A' | 'B' | 'C') => {
+    const key = getLogKey({ COMP_DAY: date, MACHINE_ID: machineId, SHIFT: shift });
+    const element = document.getElementById(key);
+
+    if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Apply a temporary highlight animation
+        element.classList.add('animate-highlight');
+        setTimeout(() => {
+            // Check if element still exists before removing class
+            if (document.getElementById(key)) {
+                element.classList.remove('animate-highlight');
+            }
+        }, 1500); // Must match animation duration
+    }
   };
   
   const requestSort = (key: SortKey) => {
@@ -124,11 +203,10 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
       return preliminaryFilteredData;
     }
 
-    // Create a set of keys for production logs that have the selected defect type for efficient lookup
     const logsWithSelectedDefect = new Set(
-      defectRecords
-        .filter(d => d.DEFECT_TYPE === selectedDefectType)
-        .map(d => `${d.COMP_DAY}|${d.MACHINE_ID}|${d.SHIFT}`)
+      allDefectRecords
+        .filter(d => d.defect_type_name === selectedDefectType)
+        .map(d => `${d.work_date}|${d.MACHINE_ID}|${d.SHIFT}`)
     );
 
     return preliminaryFilteredData.filter(log => {
@@ -136,13 +214,12 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
       return logsWithSelectedDefect.has(logKey);
     });
 
-  }, [data, searchTerm, selectedShift, minDefects, maxDefects, minDowntime, maxDowntime, selectedDefectType]);
+  }, [data, searchTerm, selectedShift, minDefects, maxDefects, minDowntime, maxDowntime, selectedDefectType, allDefectRecords]);
 
   const sortedData = useMemo(() => {
     let sortableItems = [...filteredData];
     if (sortConfig) {
       sortableItems.sort((a, b) => {
-        // Handle calculated OEE separately from the object key `OEE`
         const key = sortConfig.key;
         let aValue: any;
         let bValue: any;
@@ -188,11 +265,11 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
       <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700/50">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
           <div className="lg:col-span-2">
-            <label htmlFor="search-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search Machine/Line</label>
+            <label htmlFor="search-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('searchMachineLine')}</label>
             <input
               id="search-input"
               type="text"
-              placeholder="Filter by ID..."
+              placeholder={t('filterById')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
@@ -200,50 +277,50 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
           </div>
 
           <div>
-            <label htmlFor="shift-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Shift</label>
+            <label htmlFor="shift-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('shift')}</label>
             <select
               id="shift-select"
               value={selectedShift}
               onChange={(e) => setSelectedShift(e.target.value as 'all' | 'A' | 'B' | 'C')}
               className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
             >
-              <option value="all">All Shifts</option>
-              <option value="A">Shift A</option>
-              <option value="B">Shift B</option>
-              <option value="C">Shift C</option>
+              <option value="all">{t('allShifts')}</option>
+              <option value="A">{t('shiftA')}</option>
+              <option value="B">{t('shiftB')}</option>
+              <option value="C">{t('shiftC')}</option>
             </select>
           </div>
 
           <div>
-            <label htmlFor="defect-type-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Defect Type</label>
+            <label htmlFor="defect-type-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('defectType')}</label>
             <select
               id="defect-type-select"
               value={selectedDefectType}
               onChange={(e) => setSelectedDefectType(e.target.value)}
               className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
             >
-              <option value="all">All Defect Types</option>
-              {uniqueDefectTypes.map(type => (
-                <option key={type} value={type}>{type}</option>
+              <option value="all">{t('allDefectTypes')}</option>
+              {allDefectTypes.map(type => (
+                <option key={type.id} value={type.name}>{type.name}</option>
               ))}
             </select>
           </div>
           
           <div>
-             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Defects Range</label>
+             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('defectsRange')}</label>
              <div className="flex items-center gap-2">
-                <FilterInput value={minDefects} onChange={(e) => setMinDefects(e.target.value)} placeholder="Min" label="Min Defects" />
+                <FilterInput value={minDefects} onChange={(e) => setMinDefects(e.target.value)} placeholder={t('min')} label="Min Defects" />
                 <span className="text-gray-500">-</span>
-                <FilterInput value={maxDefects} onChange={(e) => setMaxDefects(e.target.value)} placeholder="Max" label="Max Defects" />
+                <FilterInput value={maxDefects} onChange={(e) => setMaxDefects(e.target.value)} placeholder={t('max')} label="Max Defects" />
              </div>
           </div>
           
           <div>
-             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Downtime Range</label>
+             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('downtimeRange')}</label>
              <div className="flex items-center gap-2">
-                <FilterInput value={minDowntime} onChange={(e) => setMinDowntime(e.target.value)} placeholder="Min" label="Min Downtime" />
+                <FilterInput value={minDowntime} onChange={(e) => setMinDowntime(e.target.value)} placeholder={t('min')} label="Min Downtime" />
                 <span className="text-gray-500">-</span>
-                <FilterInput value={maxDowntime} onChange={(e) => setMaxDowntime(e.target.value)} placeholder="Max" label="Max Downtime" />
+                <FilterInput value={maxDowntime} onChange={(e) => setMaxDowntime(e.target.value)} placeholder={t('max')} label="Max Downtime" />
              </div>
           </div>
         </div>
@@ -252,7 +329,7 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
                 onClick={handleClearFilters}
                 className="text-sm text-cyan-600 dark:text-cyan-400 hover:underline"
             >
-                Clear All Filters
+                {t('clearAllFilters')}
             </button>
         </div>
       </div>
@@ -260,16 +337,16 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6"><button onClick={() => requestSort('MACHINE_ID')} className={headerButtonClass}>Machine ID {getSortIcon('MACHINE_ID')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('LINE_ID')} className={headerButtonClass}>Line {getSortIcon('LINE_ID')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('SHIFT')} className={headerButtonClass}>Shift {getSortIcon('SHIFT')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('ACT_PRO_QTY')} className={headerButtonClass}>Output {getSortIcon('ACT_PRO_QTY')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('DEFECT_QTY')} className={headerButtonClass}>Defects {getSortIcon('DEFECT_QTY')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('DOWNTIME_MIN')} className={headerButtonClass}>Downtime (min) {getSortIcon('DOWNTIME_MIN')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('availability')} className={headerButtonClass}>Availability {getSortIcon('availability')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('performance')} className={headerButtonClass}>Performance {getSortIcon('performance')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('quality')} className={headerButtonClass}>Quality {getSortIcon('quality')}</button></th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('OEE')} className={headerButtonClass}>OEE {getSortIcon('OEE')}</button></th>
+              <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6"><button onClick={() => requestSort('MACHINE_ID')} className={headerButtonClass}>{t('machineId')} {getSortIcon('MACHINE_ID')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('LINE_ID')} className={headerButtonClass}>{t('line')} {getSortIcon('LINE_ID')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('SHIFT')} className={headerButtonClass}>{t('shift')} {getSortIcon('SHIFT')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('ACT_PRO_QTY')} className={headerButtonClass}>{t('output')} {getSortIcon('ACT_PRO_QTY')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('DEFECT_QTY')} className={headerButtonClass}>{t('defects')} {getSortIcon('DEFECT_QTY')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('DOWNTIME_MIN')} className={headerButtonClass}>{t('downtimeMin')} {getSortIcon('DOWNTIME_MIN')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('availability')} className={headerButtonClass}>{t('availability')} {getSortIcon('availability')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('performance')} className={headerButtonClass}>{t('performance')} {getSortIcon('performance')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('quality')} className={headerButtonClass}>{t('quality')} {getSortIcon('quality')}</button></th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"><button onClick={() => requestSort('OEE')} className={headerButtonClass}>{t('oee')} {getSortIcon('OEE')}</button></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-900">
@@ -290,7 +367,11 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
               }
 
               return (
-              <tr key={log.Prod_ID} className={`transition-colors duration-150 ${rowClass}`}>
+              <tr 
+                key={log.Prod_ID} 
+                id={getLogKey(log)}
+                className={`transition-colors duration-150 ${rowClass}`}
+              >
                 <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sm:pl-6">
                   <button
                     onClick={() => onMachineSelect(log.MACHINE_ID)}
@@ -308,8 +389,8 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300">{log.ACT_PRO_QTY.toLocaleString()}</td>
                 <td 
                   className="whitespace-nowrap px-3 py-4 text-sm text-red-500 dark:text-red-400 cursor-pointer"
-                  onDoubleClick={(e) => handleDoubleClick(log, e)}
-                  title="Double-click to edit"
+                  onDoubleClick={(e) => handleDefectCellDoubleClick(log, e)}
+                  title="Double-click for details"
                 >
                   {log.DEFECT_QTY.toLocaleString()}
                 </td>
@@ -328,41 +409,20 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
         </table>
         {sortedData.length === 0 && (
           <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            No records match your search criteria.
+            {t('noRecordsMatch')}
           </div>
         )}
       </div>
 
-      {editingPopover && (
-          <div className="fixed inset-0 z-40" onClick={handleCancelEdit}>
-              <div
-                  className="absolute bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-600 p-4 space-y-3 animate-fade-in-up"
-                  style={{
-                      top: `${editingPopover.top + 10}px`,
-                      left: `${editingPopover.left}px`,
-                      transform: 'translateX(-50%)',
-                      zIndex: 50,
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-              >
-                  <h4 className="font-semibold text-gray-800 dark:text-white">Update Defects</h4>
-                  <input
-                      type="number"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleConfirmEdit();
-                          if (e.key === 'Escape') handleCancelEdit();
-                      }}
-                      autoFocus
-                      className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-500 rounded px-2 py-1 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
-                  <div className="flex justify-end gap-2">
-                      <button onClick={handleCancelEdit} className="text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white font-semibold py-1 px-3 rounded-md transition-colors">Cancel</button>
-                      <button onClick={handleConfirmEdit} className="text-sm bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-1 px-3 rounded-md transition-colors">Confirm</button>
-                  </div>
-              </div>
-          </div>
+      {detailsPopover && (
+          <DefectDetailsPopover
+              defects={detailsPopover.defects}
+              top={detailsPopover.top}
+              left={detailsPopover.left}
+              onClose={() => setDetailsPopover(null)}
+              onNavigate={handleScrollToLogEntry}
+              t={t}
+          />
       )}
     </div>
   );

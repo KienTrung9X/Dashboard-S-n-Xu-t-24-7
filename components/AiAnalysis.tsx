@@ -1,7 +1,9 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { DashboardData } from '../types';
+import { useTranslation } from '../i18n/LanguageContext';
+import { Sparkles, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+
 
 interface AiAnalysisProps {
     data: DashboardData;
@@ -16,139 +18,155 @@ interface AiAnalysisProps {
 
 // A simple markdown to HTML renderer
 const renderMarkdown = (text: string) => {
+    // 1. Convert markdown to basic HTML elements
     let html = text
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
-        .replace(/^\* (.*$)/gm, '<li>$1</li>') // List items
-        .replace(/(<li>(.|\n|\r)*?<\/li>)/g, '<ul class="list-disc pl-5 space-y-1">$1</ul>') // Wrap lists
-        .replace(/\n/g, '<br />') // Newlines
-        .replace(/<br \/>\s*<ul/g, '<ul') // Cleanup
-        .replace(/<\/ul>\s*<br \/>/g, '</ul>');
+        .replace(/^\s*\*\s+(.*)/gm, '<li>$1</li>'); // List items
+
+    // 2. Handle newlines that aren't part of list structure
+    html = html.replace(/\n/g, '<br />');
+
+    // 3. Wrap consecutive <li> elements in a <ul>
+    // This regex finds blocks of <li> tags, optionally separated by <br /> tags
+    html = html.replace(/(?:<li>.*?<\/li>\s*(?:<br \/>)?\s*)+/g, (match) => {
+        // Remove the <br /> tags from within the matched list block and wrap with <ul>
+        return `<ul class="list-disc pl-5 space-y-1">${match.replace(/<br \/>/g, '')}</ul>`;
+    });
+
     return { __html: html };
 };
 
 
 const AiAnalysis: React.FC<AiAnalysisProps> = ({ data, filters }) => {
-    const [analysis, setAnalysis] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState('');
-
-    // Clear analysis when data/filters change
-    useEffect(() => {
-        setAnalysis('');
-        setError('');
-    }, [data, filters]);
+    const { t, language } = useTranslation();
+    const [analysis, setAnalysis] = useState<string>('');
+    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
 
     const handleGenerateAnalysis = async () => {
         setIsLoading(true);
-        setError('');
+        setError(null);
         setAnalysis('');
 
         try {
             if (!process.env.API_KEY) {
-                throw new Error("API key is not configured.");
+                console.warn("Gemini API key is not configured. AI analysis is disabled.");
+                setError("API key is not configured.");
+                setIsLoading(false);
+                return;
             }
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-            const dataSummary = {
+            // Create a simplified summary for a more focused and efficient prompt
+            const summaryForAI = {
+                filters: filters,
                 summary: data.summary,
-                top_defects: data.quality.defectPareto.slice(0, 3).map(d => ({name: d.name, value: d.value})),
-                top_downtime: data.downtime.downtimePareto.slice(0, 3).map(d => ({name: d.name, value: d.value})),
-                top_downtime_machines: data.downtime.top5DowntimeMachines.slice(0,3)
+                top5Defects: data.quality.defectPareto.slice(0, 5),
+                top5Downtime: data.downtime.downtimePareto.slice(0, 5),
             };
 
-            const filterContext = `Khu vực: ${filters.area}, Ca: ${filters.shift === 'all' ? 'Cả ngày' : filters.shift}, ${filters.mode === 'single' ? `Ngày: ${filters.startDate}`: `Khoảng ngày: ${filters.startDate} đến ${filters.endDate}`}.`
+            const prompt = `Analyze the following manufacturing data summary for the period ${filters.startDate} to ${filters.endDate}. The language for the analysis should be ${language === 'vi' ? 'Vietnamese' : 'English'}.
 
-            const prompt = `
-                Bạn là một chuyên gia phân tích sản xuất. Dựa vào dữ liệu JSON tóm tắt sau đây, hãy cung cấp một bản phân tích ngắn gọn bằng TIẾNG VIỆT.
-                
-                Bối cảnh: ${filterContext}
+Data Summary:
+- Total Production: ${summaryForAI.summary.totalProduction.toLocaleString()} units
+- Total Defects: ${summaryForAI.summary.totalDefects.toLocaleString()} units
+- Total Downtime: ${summaryForAI.summary.totalDowntime.toLocaleString()} minutes
+- Average OEE: ${(summaryForAI.summary.avgOee * 100).toFixed(1)}%
 
-                Dữ liệu:
-                ${JSON.stringify(dataSummary, null, 2)}
+Top 5 Defect Reasons:
+${summaryForAI.top5Defects.map(d => `- ${d.name}: ${d.value} units`).join('\n')}
 
-                Yêu cầu phân tích:
-                1.  Tóm tắt tổng quan về OEE, tỷ lệ sử dụng máy (machine utilization), và sản lượng.
-                2.  Chỉ ra yếu tố lớn nhất ảnh hưởng tiêu cực đến hiệu suất (dựa trên thời gian dừng máy hoặc loại lỗi nổi bật nhất).
-                3.  Nêu một điểm sáng, khu vực hoạt động tốt.
-                4.  Đưa ra một đề xuất cụ thể để cải thiện.
+Top 5 Downtime Reasons:
+${summaryForAI.top5Downtime.map(d => `- ${d.name}: ${d.value} minutes`).join('\n')}
 
-                Định dạng câu trả lời của bạn bằng Markdown, sử dụng dấu hoa thị (*) cho danh sách và dấu sao đôi (**) để nhấn mạnh. KHÔNG sử dụng tiêu đề Markdown (dấu #).
-            `;
+Based on this data, provide a brief analysis. Start with a short, bolded headline summarizing the key finding. Then, provide 2-3 bullet points highlighting key insights, potential root causes, or suggestions for improvement. Be concise and data-driven. Do not add any introductory or concluding phrases like "Here is the analysis".
+`;
 
             const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
+              model: 'gemini-2.5-flash',
+              contents: prompt,
             });
             
             setAnalysis(response.text);
 
-        } catch (err) {
-            console.error("Gemini API call failed:", err);
-            const errorMessage = err instanceof Error ? err.message : "An unknown error occurred while communicating with the AI.";
-            setError(`Không thể tạo phân tích: ${errorMessage}`);
+        } catch (err: any) {
+            console.error("AI analysis failed:", err);
+            setError(err.message || 'An unknown error occurred.');
         } finally {
             setIsLoading(false);
         }
     };
 
-    return (
-        <section>
-             <h2 className="text-2xl font-semibold text-purple-400 mb-4 border-l-4 border-purple-400 pl-3">
-                AI-Powered Analysis
-            </h2>
-            <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
-                {!analysis && !isLoading && !error && (
-                    <div className="text-center">
-                         <p className="text-gray-400 mb-4">Nhấp để tạo bản tóm tắt và thông tin chi tiết bằng AI dựa trên các bộ lọc hiện tại của bạn.</p>
-                        <button
-                            onClick={handleGenerateAnalysis}
-                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105 flex items-center gap-2 mx-auto"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                            </svg>
-                            Generate Analysis
-                        </button>
-                    </div>
+    const InitialView = () => (
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-gray-400 text-sm flex-grow">{t('aiAnalysisDesc')}</p>
+            <button
+                onClick={handleGenerateAnalysis}
+                disabled={isLoading}
+                className="bg-cyan-500 hover:bg-cyan-600 disabled:bg-cyan-800 disabled:cursor-wait text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center gap-2 transition-all transform hover:scale-105"
+            >
+                {isLoading ? (
+                    <>
+                        <Loader2 size={16} className="animate-spin" />
+                        {t('aiAnalyzing')}
+                    </>
+                ) : (
+                    <>
+                        <Sparkles size={16} />
+                        {t('generateAnalysisButton')}
+                    </>
                 )}
-                
-                {isLoading && (
-                     <div className="flex items-center justify-center text-center p-4">
-                        <svg className="animate-spin h-6 w-6 text-purple-400 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <p className="text-purple-300">AI đang phân tích dữ liệu...</p>
-                    </div>
-                )}
+            </button>
+        </div>
+    );
 
-                {error && (
-                    <div className="text-center bg-red-900/50 border border-red-700 text-red-300 p-4 rounded-md">
-                        <p className="font-semibold mb-2">Analysis Failed</p>
-                        <p className="text-sm">{error}</p>
-                        <button
-                            onClick={handleGenerateAnalysis}
-                            className="mt-4 text-sm text-purple-400 hover:text-purple-300 flex items-center gap-1 mx-auto"
-                        >
-                            Try Again
-                        </button>
-                    </div>
-                )}
-
-                {analysis && (
-                     <div className="text-gray-300 space-y-2 leading-relaxed animate-fade-in-up">
-                        <div dangerouslySetInnerHTML={renderMarkdown(analysis)} />
-                         <button
-                            onClick={handleGenerateAnalysis}
-                            disabled={isLoading}
-                            className="mt-4 text-sm text-purple-400 hover:text-purple-300 disabled:text-gray-500 flex items-center gap-1"
-                        >
-                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" /></svg>
-                            Regenerate
-                        </button>
-                    </div>
-                )}
+    const ResultView = () => (
+        <div>
+            <div className="prose prose-sm prose-invert max-w-none bg-black/20 p-4 rounded-md mb-4" dangerouslySetInnerHTML={renderMarkdown(analysis)} />
+            <div className="flex justify-end">
+                 <button
+                    onClick={handleGenerateAnalysis}
+                    disabled={isLoading}
+                    className="bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:cursor-wait text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-colors text-sm"
+                >
+                    {isLoading ? (
+                        <>
+                            <Loader2 size={16} className="animate-spin" />
+                            {t('aiAnalyzing')}
+                        </>
+                    ) : (
+                        <>
+                            <RefreshCw size={14} />
+                            {t('regenerate')}
+                        </>
+                    )}
+                </button>
             </div>
+        </div>
+    );
+    
+     const ErrorView = () => (
+        <div className="bg-red-900/40 p-4 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-3">
+                <AlertTriangle className="text-red-400" size={20} />
+                <div>
+                    <p className="font-semibold text-red-300">{t('analysisFailed')}</p>
+                    <p className="text-xs text-red-400">{error}</p>
+                </div>
+            </div>
+            <button
+                onClick={handleGenerateAnalysis}
+                className="bg-red-500/50 hover:bg-red-500/80 text-white font-bold py-1 px-3 text-sm rounded-md"
+            >
+                {t('tryAgain')}
+            </button>
+        </div>
+    );
+
+    return (
+        <section className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
+            <h2 className="text-xl font-semibold text-cyan-400 mb-3">{t('aiAnalysisTitle')}</h2>
+            {error ? <ErrorView /> : analysis ? <ResultView /> : <InitialView />}
         </section>
     );
 };

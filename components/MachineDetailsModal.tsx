@@ -1,9 +1,8 @@
-
-
 import React from 'react';
-import { MachineInfo, DowntimeRecord, ProductionDaily, DefectAdjustmentLog, DataPoint } from '../types';
+import { MachineInfo, DowntimeRecord, ProductionDaily, EnrichedErrorReport, EnrichedMaintenanceOrder, DataPoint } from '../types';
 import SimplePieChart from './SimplePieChart';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
+import { useTranslation } from '../i18n/LanguageContext';
 
 interface MachineDetailsModalProps {
   isOpen: boolean;
@@ -11,7 +10,9 @@ interface MachineDetailsModalProps {
   machineInfo: MachineInfo | null;
   productionRecord: ProductionDaily | null;
   downtimeRecords: DowntimeRecord[];
-  adjustmentHistory: DefectAdjustmentLog[];
+  errorHistory: EnrichedErrorReport[];
+  maintenanceHistory: EnrichedMaintenanceOrder[];
+  plannedMaintenance: EnrichedMaintenanceOrder[];
   theme?: 'light' | 'dark';
 }
 
@@ -63,24 +64,17 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
   machineInfo,
   productionRecord,
   downtimeRecords,
-  adjustmentHistory,
+  errorHistory,
+  maintenanceHistory,
+  plannedMaintenance,
   theme,
 }) => {
-  const [showHistory, setShowHistory] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setShowHistory(false);
-    }
-  }, [isOpen]);
+  const { t } = useTranslation();
 
   const downtimeChartData = useMemo((): DataPoint[] => {
     if (!downtimeRecords || downtimeRecords.length === 0) {
       return [];
     }
-
-    // FIX: Explicitly typing `downtimeByReason` ensures that `Object.entries` correctly infers
-    // the value as a number, resolving downstream type errors in `map` and `sort`.
     const downtimeByReason: Record<string, number> = downtimeRecords.reduce((acc, record) => {
       acc[record.DOWNTIME_REASON] = (acc[record.DOWNTIME_REASON] || 0) + record.DOWNTIME_MIN;
       return acc;
@@ -91,37 +85,16 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
       .sort((a, b) => b.value - a.value);
   }, [downtimeRecords]);
 
-  const sortedDowntime = useMemo(() => {
-    return [...downtimeRecords].sort((a, b) => {
-        const dateComparison = b.COMP_DAY.localeCompare(a.COMP_DAY);
-        if (dateComparison !== 0) return dateComparison;
-        return b.START_TIME.localeCompare(a.START_TIME);
-    }).slice(0, 10);
-  }, [downtimeRecords]);
-
-  const calculateDuration = (start: string, end: string, compDay: string): number => {
-    if (!start || !end || !start.includes(':') || !end.includes(':')) {
-        return 0; // Return 0 if times are invalid
-    }
-    const [startH, startM] = start.split(':').map(Number);
-    const [endH, endM] = end.split(':').map(Number);
-
-    if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) {
-        return 0; // Return 0 if parsing fails
-    }
-
-    const startDate = new Date(`${compDay}T${start}:00`);
-    let endDate = new Date(`${compDay}T${end}:00`);
-    
-    // Handle overnight downtime
-    if (endDate.getTime() <= startDate.getTime()) {
-        endDate.setDate(endDate.getDate() + 1);
-    }
-    
-    const diffMs = endDate.getTime() - startDate.getTime();
-    return Math.round(diffMs / 60000); // convert ms to minutes
+  const getStatusChip = (status: string) => {
+    const styles: Record<string, string> = {
+      Reported: 'bg-yellow-900 text-yellow-300', 'In Progress': 'bg-blue-900 text-blue-300',
+      Fixed: 'bg-green-900 text-green-300', 'Not Machine Issue': 'bg-purple-900 text-purple-300',
+      Closed: 'bg-gray-700 text-gray-400',
+      Open: 'bg-yellow-900 text-yellow-300', Done: 'bg-green-900 text-green-300', Canceled: 'bg-gray-700 text-gray-300',
+    };
+    return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${styles[status] || ''}`}>{t(status.replace(/\s/g, '') as any) || status}</span>;
   };
-  
+
   if (!isOpen) return null;
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -145,7 +118,7 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
               <h2 className="text-2xl font-bold">{machineInfo.MACHINE_NAME} ({machineInfo.MACHINE_ID})</h2>
             </div>
           ) : (
-             <h2 className="text-2xl font-bold">Machine Details</h2>
+             <h2 className="text-2xl font-bold">{t('machineDetails')}</h2>
           )}
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors" aria-label="Close modal">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -157,113 +130,86 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
         <main className="p-6 overflow-y-auto bg-gray-50 dark:bg-gray-900">
           {!machineInfo || !productionRecord ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-gray-400">Loading machine data...</p>
+              <p className="text-gray-400">{t('loadingMachineData')}</p>
             </div>
           ) : (
             <div className="space-y-6">
               
-              <Card title="Machine Specifications">
+              <Card title={t('machineSpecs')}>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <SpecItem label="Line ID" value={machineInfo.LINE_ID} />
-                      <SpecItem label="Item Code" value={productionRecord.ITEM_CODE} />
-                      <SpecItem label="Design Speed" value={`${machineInfo.DESIGN_SPEED} units/min`} />
-                      <SpecItem label="Ideal Cycle Time" value={`${machineInfo.IDEAL_CYCLE_TIME} min/unit`} />
+                      <SpecItem label={t('lineId')} value={machineInfo.LINE_ID} />
+                      <SpecItem label={t('itemCode')} value={productionRecord.ITEM_CODE} />
+                      <SpecItem label={t('designSpeed')} value={`${machineInfo.DESIGN_SPEED} ${t('unitsMin')}`} />
+                      <SpecItem label={t('idealCycleTime')} value={`${machineInfo.IDEAL_CYCLE_TIME} ${t('minUnit')}`} />
                   </div>
               </Card>
 
-              <Card title={`Daily Performance (Shift: ${productionRecord.SHIFT})`}>
+              <Card title={`${t('dailyPerformance')} (${t('shift')}: ${productionRecord.SHIFT})`}>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                     <div className="md:col-span-1 border-r-0 md:border-r border-gray-200 dark:border-gray-700 pr-0 md:pr-6 flex justify-center">
-                        <OeeMetric title="OEE" value={productionRecord.OEE} isPrimary />
+                        <OeeMetric title={t('oee')} value={productionRecord.OEE} isPrimary />
                     </div>
                     <div className="md:col-span-2 grid grid-cols-3 gap-4">
-                        <OeeMetric title="Availability" value={productionRecord.availability ?? 0} />
-                        <OeeMetric title="Performance" value={productionRecord.performance ?? 0} />
-                        <OeeMetric title="Quality" value={productionRecord.quality ?? 0} />
+                        <OeeMetric title={t('availability')} value={productionRecord.availability ?? 0} />
+                        <OeeMetric title={t('performance')} value={productionRecord.performance ?? 0} />
+                        <OeeMetric title={t('quality')} value={productionRecord.quality ?? 0} />
                     </div>
                 </div>
               </Card>
 
-              <Card title="Downtime Analysis">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
-                    <div className="min-h-[300px]">
-                        <SimplePieChart data={downtimeChartData} theme={theme} />
-                    </div>
-                    <div className="overflow-y-auto max-h-72 border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 pt-4 lg:pt-0 lg:pl-4">
-                      <h4 className="text-md font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                          Recent Downtime Events
-                          {downtimeRecords.length > 10 && <span className="text-xs font-normal text-gray-400"> (showing 10 of {downtimeRecords.length})</span>}
-                      </h4>
-                      {sortedDowntime.length > 0 ? (
-                        <table className="min-w-full text-sm">
-                          <thead className="bg-gray-100 dark:bg-gray-700/50 sticky top-0">
-                            <tr>
-                              <th className="p-2 text-left font-semibold">Date</th>
-                              <th className="p-2 text-left font-semibold">Reason</th>
-                              <th className="p-2 text-left font-semibold">Start Time</th>
-                              <th className="p-2 text-left font-semibold">End Time</th>
-                              <th className="p-2 text-right font-semibold">Total Duration</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                            {sortedDowntime.map(log => {
-                              const duration = calculateDuration(log.START_TIME, log.END_TIME, log.COMP_DAY);
-                              return (
-                                <tr key={log.Downtime_ID}>
-                                  <td className="p-2 whitespace-nowrap">{log.COMP_DAY}</td>
-                                  <td className="p-2">{log.DOWNTIME_REASON}</td>
-                                  <td className="p-2">{log.START_TIME}</td>
-                                  <td className="p-2">{log.END_TIME}</td>
-                                  <td className="p-2 text-right whitespace-nowrap">{duration} min</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-gray-500">
-                            No downtime events recorded.
-                        </div>
-                      )}
-                    </div>
-                  </div>
+              <Card title={t('downtimeAnalysis')}>
+                <div className="min-h-[300px]">
+                    <SimplePieChart data={downtimeChartData} theme={theme} />
+                </div>
               </Card>
 
-              <Card title="Defect Adjustment History">
-                <div>
-                    <button 
-                      onClick={() => setShowHistory(!showHistory)} 
-                      className="text-cyan-500 dark:text-cyan-400 hover:text-cyan-600 dark:hover:text-cyan-300 text-sm font-medium mb-2"
-                    >
-                      {showHistory ? 'Hide History' : 'Show History'} ({adjustmentHistory.length} records)
-                    </button>
-                    {showHistory && (
-                      <div className="overflow-x-auto mt-2 max-h-48 border-t border-gray-200 dark:border-gray-700 pt-2">
-                          <table className="min-w-full text-sm">
-                              <thead className="bg-gray-100 dark:bg-gray-700/50">
-                                  <tr>
-                                      <th className="p-2 text-left font-semibold">Timestamp</th>
-                                      <th className="p-2 text-left font-semibold">Previous Value</th>
-                                      <th className="p-2 text-left font-semibold">New Value</th>
-                                      <th className="p-2 text-left font-semibold">User</th>
-                                  </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                  {adjustmentHistory.map(log => (
-                                      <tr key={log.logId}>
-                                          <td className="p-2">{new Date(log.timestamp).toLocaleString()}</td>
-                                          <td className="p-2">{log.previousValue}</td>
-                                          <td className="p-2 text-cyan-500 dark:text-cyan-400 font-semibold">{log.newValue}</td>
-                                          <td className="p-2">{log.user}</td>
-                                      </tr>
-                                  ))}
-                              </tbody>
-                          </table>
-                      </div>
-                    )}
-                    {adjustmentHistory.length === 0 && !showHistory && <p className="text-gray-500 text-sm">No adjustments recorded for this machine.</p>}
-                 </div>
+              <Card title={t('errorHistoryTitle')}>
+                {errorHistory.length > 0 ? (
+                    <ul className="divide-y divide-gray-200 dark:divide-gray-700 max-h-48 overflow-y-auto text-sm">
+                        {errorHistory.map(report => (
+                            <li key={report.id} className="py-2 flex justify-between items-center">
+                                <div>
+                                    <p className="font-semibold text-gray-800 dark:text-gray-200">{t('report')} #{report.reportNo}: <span className="font-normal text-gray-600 dark:text-gray-400">{report.defect_type}</span></p>
+                                    <p className="text-xs text-gray-500">{new Date(report.report_time).toLocaleString()}</p>
+                                </div>
+                                {getStatusChip(report.status)}
+                            </li>
+                        ))}
+                    </ul>
+                ) : <p className="text-gray-400 text-sm">{t('noErrorHistory')}</p>}
               </Card>
+
+              <Card title={t('maintenanceHistoryTitle')}>
+                 {maintenanceHistory.length > 0 ? (
+                    <ul className="divide-y divide-gray-200 dark:divide-gray-700 max-h-48 overflow-y-auto text-sm">
+                        {maintenanceHistory.map(order => (
+                            <li key={order.id} className="py-2">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="font-semibold text-gray-800 dark:text-gray-200">{t('order')} #{order.id}: <span className="font-normal text-gray-600 dark:text-gray-400">{order.symptom}</span></p>
+                                        <p className="text-xs text-gray-500">{t('completed')}: {order.completed_at ? new Date(order.completed_at).toLocaleDateString() : 'N/A'} {t('by')} {order.assigned_to_name}</p>
+                                    </div>
+                                    <span className="font-bold text-xs uppercase tracking-wider text-cyan-400">{t(order.type.toLowerCase() as any)}</span>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                ) : <p className="text-gray-400 text-sm">{t('noMaintenanceHistory')}</p>}
+              </Card>
+
+              <Card title={t('plannedMaintenanceTitle')}>
+                 {plannedMaintenance.length > 0 ? (
+                    <ul className="divide-y divide-gray-200 dark:divide-gray-700 max-h-48 overflow-y-auto text-sm">
+                        {plannedMaintenance.map(order => (
+                            <li key={order.id} className="py-2">
+                                <p className="font-semibold text-gray-800 dark:text-gray-200">{t('task')}: <span className="font-normal text-gray-600 dark:text-gray-400">{order.symptom}</span></p>
+                                <p className="text-xs text-gray-500">{t('scheduledFor')}: {new Date(order.created_at).toLocaleDateString()}</p>
+                            </li>
+                        ))}
+                    </ul>
+                ) : <p className="text-gray-400 text-sm">{t('noPlannedMaintenance')}</p>}
+              </Card>
+
             </div>
           )}
         </main>
