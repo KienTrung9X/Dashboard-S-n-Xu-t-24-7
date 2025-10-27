@@ -135,6 +135,11 @@ export interface SparePart {
     reorder_point: number;
     maintenance_interval_days?: number;
     flagged_for_order?: boolean;
+    // New fields for enhanced details
+    image_url?: string;
+    lifespan_days?: number;
+    wear_tear_standard?: string;
+    replacement_standard?: string;
 }
 
 // FIX: Added missing Maintenance types
@@ -286,6 +291,19 @@ export interface EnrichedDefectRecord extends DefectRecord {
     image_urls: string[];
 }
 
+// New types for enriched Spare Part details
+export interface SparePartUsageHistory {
+    order_id: number;
+    MACHINE_ID: string;
+    completed_at: string;
+    qty_used: number;
+}
+
+export interface EnrichedSparePart extends SparePart {
+    usageHistory: SparePartUsageHistory[];
+    purchaseHistory: McPartOrder[];
+}
+
 
 // --- FORM SUBMISSION TYPES ---
 export interface NewErrorReportData {
@@ -327,6 +345,10 @@ export interface NewSparePartData {
     reserved: number;
     used_in_period: number;
     maintenance_interval_days?: number;
+    image_url?: string;
+    lifespan_days?: number;
+    wear_tear_standard?: string;
+    replacement_standard?: string;
 }
 
 export interface NewMcPartRequestData {
@@ -484,6 +506,13 @@ export interface HeatmapDataPoint {
   value: number;
 }
 
+export interface ScatterDataPoint {
+    production: number;
+    downtime: number;
+    machineId: string;
+    lineId: string;
+}
+
 export interface MachineStatusData {
     machineId: string;
     status: 'Running' | 'Stopped' | 'Error' | 'Inactive';
@@ -555,6 +584,7 @@ export interface DashboardData {
     avgAvailability: number;
     avgPerformance: number;
     avgQuality: number;
+    defectRate: number;
     productionByLine: DataPoint[];
     oeeByLine: DataPoint[];
   };
@@ -571,6 +601,7 @@ export interface DashboardData {
     defectTrend: TrendData[];
     top5DefectLines: Top5DefectLine[];
     defectsByRootCause: DataPoint[];
+    defectRecordsForPeriod: EnrichedDefectRecord[];
   };
 
   downtime: {
@@ -580,6 +611,7 @@ export interface DashboardData {
     top5DowntimeMachines: Top5DowntimeMachine[];
     downtimeByLine: StackedBarDataPoint[];
     uniqueDowntimeReasons: string[];
+    downtimeVsProduction: ScatterDataPoint[];
   };
   
   maintenance: {

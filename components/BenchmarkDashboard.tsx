@@ -50,7 +50,6 @@ const BenchmarkDashboard: React.FC<BenchmarkDashboardProps> = ({ data, theme }) 
   return (
     <div className="space-y-6">
       <section>
-        {/* FIX: Corrected translation key */}
         <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('oeeBenchmarkTitle')}</h2>
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
             <SimpleBarChart data={oeeByLine.sort((a,b) => b.value - a.value)} xAxisKey="name" barKey="value" fillColor={getBarColor} isPercentage theme={theme} />
@@ -58,7 +57,6 @@ const BenchmarkDashboard: React.FC<BenchmarkDashboardProps> = ({ data, theme }) 
       </section>
       
       <section>
-        {/* FIX: Corrected translation key */}
         <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('targetVsActualTitle')}</h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {benchmarkData.map(d => (
@@ -66,7 +64,6 @@ const BenchmarkDashboard: React.FC<BenchmarkDashboardProps> = ({ data, theme }) 
                     <h3 className="text-xl font-bold">{t('line')} {d.lineId}</h3>
                     <KpiProgress label={t('oee')} actual={d.actualOee} target={d.targetOee} formatAs="percent" />
                     <KpiProgress label={t('output')} actual={d.actualOutput} target={d.targetOutput} formatAs="number" />
-                    {/* FIX: Corrected translation key */}
                     <KpiProgress label={t('defectRate')} actual={d.actualDefectRate} target={d.targetDefectRate} formatAs="percent" />
                 </div>
             ))}

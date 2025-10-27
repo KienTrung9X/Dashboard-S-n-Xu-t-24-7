@@ -149,7 +149,6 @@ const DatabaseSchemaPanel: React.FC<DatabaseSchemaPanelProps> = ({ isOpen, onClo
                 return (
                     <div
                         key={table.id}
-                        // FIX: Ref callbacks should not return a value. Wrapped the assignment in curly braces to ensure the function returns void.
                         ref={el => { nodesRef.current[table.id] = el; }}
                         className={`db-node absolute bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-600 w-52 group ${isSelected ? 'selected' : ''}`}
                         style={{

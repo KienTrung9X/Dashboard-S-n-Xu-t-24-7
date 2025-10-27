@@ -137,7 +137,7 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
               
               <Card title={t('machineSpecs')}>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <SpecItem label={t('lineId')} value={machineInfo.LINE_ID} />
+                      <SpecItem label={t('line')} value={machineInfo.LINE_ID} />
                       <SpecItem label={t('itemCode')} value={productionRecord.ITEM_CODE} />
                       <SpecItem label={t('designSpeed')} value={`${machineInfo.DESIGN_SPEED} ${t('unitsMin')}`} />
                       <SpecItem label={t('idealCycleTime')} value={`${machineInfo.IDEAL_CYCLE_TIME} ${t('minUnit')}`} />
@@ -157,7 +157,7 @@ const MachineDetailsModal: React.FC<MachineDetailsModalProps> = ({
                 </div>
               </Card>
 
-              <Card title={t('downtimeAnalysis')}>
+              <Card title={t('downtimeCauseAnalysis')}>
                 <div className="min-h-[300px]">
                     <SimplePieChart data={downtimeChartData} theme={theme} />
                 </div>

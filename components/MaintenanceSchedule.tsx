@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { EnrichedMaintenanceSchedule } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
 import { Wrench } from 'lucide-react';
@@ -6,16 +6,21 @@ import { Wrench } from 'lucide-react';
 interface MaintenanceScheduleProps {
   schedule: EnrichedMaintenanceSchedule[];
   onCreateWorkOrder: (scheduleItem: EnrichedMaintenanceSchedule) => void;
+  initialFilter: 'all' | 'Overdue' | 'Due soon' | 'On schedule';
 }
 
 type SortKey = keyof EnrichedMaintenanceSchedule;
 type SortDirection = 'ascending' | 'descending';
 
-const MaintenanceScheduleView: React.FC<MaintenanceScheduleProps> = ({ schedule, onCreateWorkOrder }) => {
+const MaintenanceScheduleView: React.FC<MaintenanceScheduleProps> = ({ schedule, onCreateWorkOrder, initialFilter }) => {
     const { t } = useTranslation();
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'Overdue' | 'Due soon' | 'On schedule'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'Overdue' | 'Due soon' | 'On schedule'>(initialFilter);
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'next_pm_date', direction: 'ascending' });
+
+    useEffect(() => {
+        setStatusFilter(initialFilter);
+    }, [initialFilter]);
 
     const requestSort = (key: SortKey) => {
         setSortConfig(prev => ({
@@ -54,7 +59,12 @@ const MaintenanceScheduleView: React.FC<MaintenanceScheduleProps> = ({ schedule,
             'Due soon': 'bg-yellow-900 text-yellow-300',
             'On schedule': 'bg-green-900 text-green-300',
         };
-        const translationKey = status.replace(/\s/g, '') as 'Overdue' | 'Duesoon' | 'Onschedule';
+        const keyMap = {
+            'Overdue': 'overdue',
+            'Due soon': 'dueSoon',
+            'On schedule': 'onSchedule'
+        };
+        const translationKey = keyMap[status];
         return <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles[status]}`}>{t(translationKey as any) || status}</span>;
     };
 

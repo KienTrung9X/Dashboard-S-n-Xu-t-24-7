@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { EnrichedErrorReport, NewErrorReportData, UpdateErrorData, ErrorReportStatus, MachineInfo, Shift, DefectType, User, DefectCause, EnrichedMaintenanceOrder } from '../types';
+import { EnrichedErrorReport, NewErrorReportData, UpdateErrorData, ErrorReportStatus, MachineInfo, Shift, DefectType, User, DefectCause, EnrichedMaintenanceOrder, ErrorImage } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
+import { X } from 'lucide-react';
 
 interface ErrorReportModalProps {
   isOpen: boolean;
@@ -25,9 +26,87 @@ const FormField: React.FC<{ label: string; id: string; required?: boolean; child
     <div><label htmlFor={id} className={formLabelClass}>{label} {required && <span className="text-red-500">*</span>}</label>{children}</div>
 );
 
+const ImageUploader: React.FC<{
+    title: string;
+    existingImages?: ErrorImage[];
+    newImages: { preview: string; description: string }[];
+    onFilesChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onDescriptionChange: (index: number, desc: string) => void;
+    onRemove: (index: number) => void;
+    maxImages: number;
+    disabled: boolean;
+}> = ({ title, existingImages = [], newImages, onFilesChange, onDescriptionChange, onRemove, maxImages, disabled }) => {
+    const { t } = useTranslation();
+    const totalImages = existingImages.length + newImages.length;
+
+    return (
+        <div className="md:col-span-2">
+            <FormField label={`${title} (${totalImages}/${maxImages})`} id="images">
+                <input
+                    type="file"
+                    multiple
+                    accept="image/png, image/jpeg"
+                    onChange={onFilesChange}
+                    className={`${formInputClass} file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100`}
+                    disabled={disabled || totalImages >= maxImages}
+                />
+            </FormField>
+
+            {/* Existing Images */}
+            {existingImages.length > 0 && (
+                <div className="mt-4">
+                    <h4 className="text-sm font-medium text-gray-400 mb-2">Existing Images</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        {existingImages.map((image, index) => (
+                             <div key={index} className="relative border dark:border-gray-600 rounded-lg p-2 bg-gray-700/30">
+                                <img src={image.image_url} alt={image.description || ''} className="w-full h-24 object-cover rounded-md mb-2" />
+                                <p className="text-xs text-gray-400 truncate">{image.description || 'No description'}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* New Images */}
+            {newImages.length > 0 && (
+                <div className="mt-4">
+                    <h4 className="text-sm font-medium text-gray-400 mb-2">New Images</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        {newImages.map((image, index) => (
+                             <div key={index} className="relative border dark:border-gray-600 rounded-lg p-2">
+                                <img src={image.preview} alt={`preview ${index}`} className="w-full h-24 object-cover rounded-md mb-2" />
+                                <input
+                                    type="text"
+                                    placeholder={t('description')}
+                                    value={image.description}
+                                    onChange={(e) => onDescriptionChange(index, e.target.value)}
+                                    className={`${formInputClass} mt-0 text-sm p-1`}
+                                    disabled={disabled}
+                                />
+                                {!disabled && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onRemove(index)}
+                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full h-6 w-6 flex items-center justify-center hover:bg-red-600"
+                                        aria-label="Remove image"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+
 const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, onSubmit, onUpdate, reportToUpdate, masterData, openMaintenanceOrders }) => {
     const { t } = useTranslation();
     const isUpdateMode = !!reportToUpdate;
+    const MAX_IMAGES = 3;
 
     const getInitialCreateState = () => ({
         machine_id: masterData.machines[0]?.id || 0,
@@ -50,6 +129,8 @@ const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, on
     const [linkToOrder, setLinkToOrder] = useState(false);
     const [linkedOrderId, setLinkedOrderId] = useState<number | null>(null);
     const [availableOrders, setAvailableOrders] = useState<EnrichedMaintenanceOrder[]>([]);
+    const [newImages, setNewImages] = useState<{ preview: string; description: string; file: File }[]>([]);
+
 
     useEffect(() => {
         if (isOpen) {
@@ -63,6 +144,7 @@ const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, on
             setLinkToOrder(false);
             setLinkedOrderId(null);
             setAvailableOrders([]);
+            setNewImages([]);
         }
     }, [isOpen, reportToUpdate, masterData]);
 
@@ -73,12 +155,10 @@ const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, on
             );
             setAvailableOrders(ordersForMachine);
             
-            // Reset linking if machine changes or has no open orders
             if (ordersForMachine.length === 0) {
                 setLinkToOrder(false);
                 setLinkedOrderId(null);
             } else {
-                // Check if the currently linked order is still valid for the new machine
                 const isCurrentLinkValid = ordersForMachine.some(o => o.id === linkedOrderId);
                 if (!isCurrentLinkValid) {
                     setLinkedOrderId(null);
@@ -86,6 +166,36 @@ const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, on
             }
         }
     }, [createData.machine_id, openMaintenanceOrders, isUpdateMode, linkedOrderId]);
+
+    const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+// FIX: Explicitly type `files` as `File[]` to resolve the error with `URL.createObjectURL` which expects a Blob, not `unknown`.
+            const files: File[] = Array.from<File>(e.target.files);
+            const existingImagesCount = isUpdateMode ? reportToUpdate.images.length : 0;
+            const availableSlots = MAX_IMAGES - existingImagesCount - newImages.length;
+            
+            const filesToAdd = files.slice(0, availableSlots);
+
+            const imageObjects = filesToAdd.map(file => ({
+                preview: URL.createObjectURL(file),
+                description: '',
+                file: file,
+            }));
+            setNewImages(prev => [...prev, ...imageObjects]);
+        }
+    };
+
+    const handleImageDescriptionChange = (index: number, description: string) => {
+        setNewImages(prev => {
+            const updated = [...prev];
+            updated[index].description = description;
+            return updated;
+        });
+    };
+
+    const handleRemoveNewImage = (index: number) => {
+        setNewImages(prev => prev.filter((_, i) => i !== index));
+    };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>, mode: 'create' | 'update') => {
         const { name, value } = e.target;
@@ -103,25 +213,29 @@ const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, on
         e.preventDefault();
         setError('');
 
+        const imagesForSubmission = newImages.map(img => ({
+            url: img.preview, // In a real app, this would be the uploaded URL
+            description: img.description
+        }));
+
         if (isUpdateMode) {
             if (!updateData.root_cause?.trim() || !updateData.action_taken?.trim()) {
                 setError(t('errorFieldsRequired'));
                 return;
             }
-            // Mock technician ID
             const technician_id = masterData.users.find(u => u.role === 'Maintenance')?.id || 0;
-            onUpdate(reportToUpdate.id, { ...updateData, technician_id }, completionStatus);
+            onUpdate(reportToUpdate.id, { ...updateData, technician_id, images: imagesForSubmission }, completionStatus);
         } else {
             if (!createData.defect_description.trim()) {
                 setError(t('errorDescriptionRequired'));
                 return;
             }
-             // Mock operator ID
             const operator_id = masterData.users.find(u => u.role === 'Operator')?.id || 0;
             onSubmit({ 
                 ...createData, 
                 operator_id,
                 linked_maintenance_order_id: linkToOrder ? linkedOrderId : null,
+                images: imagesForSubmission,
             });
         }
     };
@@ -132,7 +246,7 @@ const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, on
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl text-gray-900 dark:text-white animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl text-gray-900 dark:text-white animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
                 <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
                     <h2 className="text-2xl font-bold">{isUpdateMode ? `${t('updateReport')} #${reportToUpdate.reportNo}` : t('createErrorReport')}</h2>
                     <button onClick={onClose} aria-label="Close modal"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
@@ -169,11 +283,18 @@ const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, on
                                     <textarea name="defect_description" value={isUpdateMode ? reportToUpdate.defect_description : createData.defect_description} onChange={(e) => handleChange(e, 'create')} rows={3} className={formInputClass} required={!isUpdateMode} disabled={isUpdateMode}></textarea>
                                 </FormField>
                             </div>
-                            <div className="md:col-span-2">
-                                <FormField label={t('operatorImages')} id="images">
-                                    <input type="file" multiple disabled={isUpdateMode} />
-                                </FormField>
-                            </div>
+                            
+                            <ImageUploader 
+                                title={t('operatorImages')}
+                                existingImages={isUpdateMode ? reportToUpdate.images.filter(i => i.role === 'Operator') : []}
+                                newImages={newImages}
+                                onFilesChange={handleImageFileChange}
+                                onDescriptionChange={handleImageDescriptionChange}
+                                onRemove={handleRemoveNewImage}
+                                maxImages={MAX_IMAGES}
+                                disabled={isUpdateMode}
+                            />
+                            
                             {!isUpdateMode && (
                                 <div className="p-4 border border-dashed border-gray-600 rounded-lg md:col-span-2">
                                     <div className="flex items-center gap-3">
@@ -217,11 +338,16 @@ const ErrorReportModal: React.FC<ErrorReportModalProps> = ({ isOpen, onClose, on
                                         <textarea name="action_taken" value={updateData.action_taken} onChange={(e) => handleChange(e, 'update')} rows={3} className={formInputClass} required />
                                     </FormField>
                                 </div>
-                                 <div className="md:col-span-2">
-                                    <FormField label={t('maintenanceImages')} id="maintenance_images">
-                                        <input type="file" multiple />
-                                    </FormField>
-                                </div>
+                                 <ImageUploader 
+                                    title={t('maintenanceImages')}
+                                    existingImages={reportToUpdate.images.filter(i => i.role === 'Maintenance')}
+                                    newImages={newImages}
+                                    onFilesChange={handleImageFileChange}
+                                    onDescriptionChange={handleImageDescriptionChange}
+                                    onRemove={handleRemoveNewImage}
+                                    maxImages={MAX_IMAGES}
+                                    disabled={isReadOnly}
+                                />
                                 <div className="md:col-span-2">
                                      <FormField label={t('completionStatus')} id="completion_status" required>
                                         <select name="completion_status" value={completionStatus} onChange={(e) => setCompletionStatus(e.target.value as ErrorReportStatus)} className={formInputClass}>

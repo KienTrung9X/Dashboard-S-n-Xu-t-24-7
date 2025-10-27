@@ -82,20 +82,22 @@ const MachineEditModal: React.FC<MachineEditModalProps> = ({ isOpen, onClose, on
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <FormField label={t('machineId')} id="MACHINE_ID" required><input type="text" name="MACHINE_ID" value={formData.MACHINE_ID} onChange={handleChange} className={formInputClass} required /></FormField>
                             <FormField label={t('machineName')} id="MACHINE_NAME" required><input type="text" name="MACHINE_NAME" value={formData.MACHINE_NAME} onChange={handleChange} className={formInputClass} required /></FormField>
-                            <FormField label={t('lineId')} id="LINE_ID" required>
-                                <select name="LINE_ID" value={formData.LINE_ID} onChange={handleChange} className={formInputClass}>
-                                    {allLines.map(line => <option key={line} value={line}>{line}</option>)}
-                                </select>
-                            </FormField>
-                            <FormField label={t('status')} id="STATUS" required>
-                                <select name="STATUS" value={formData.STATUS} onChange={handleChange} className={formInputClass}>
-                                    <option value="active">{t('active')}</option>
-                                    <option value="inactive">{t('inactive')}</option>
-                                </select>
-                            </FormField>
-                             <FormField label={t('idealCycleTime')} id="IDEAL_CYCLE_TIME" required><input type="number" name="IDEAL_CYCLE_TIME" value={formData.IDEAL_CYCLE_TIME} onChange={handleChange} step="0.001" min="0" className={formInputClass} required /></FormField>
-                             <FormField label={t('designSpeed')} id="DESIGN_SPEED" required><input type="number" name="DESIGN_SPEED" value={formData.DESIGN_SPEED} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
                         </div>
+                        <FormField label={t('line')} id="LINE_ID" required>
+                            <select name="LINE_ID" value={formData.LINE_ID} onChange={handleChange} className={formInputClass}>
+                                {allLines.map(line => <option key={line} value={line}>{line}</option>)}
+                            </select>
+                        </FormField>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField label={t('idealCycleTime')} id="IDEAL_CYCLE_TIME" required><input type="number" name="IDEAL_CYCLE_TIME" value={formData.IDEAL_CYCLE_TIME} onChange={handleChange} min="0" step="0.001" className={formInputClass} required /></FormField>
+                            <FormField label={t('designSpeed')} id="DESIGN_SPEED" required><input type="number" name="DESIGN_SPEED" value={formData.DESIGN_SPEED} onChange={handleChange} min="0" className={formInputClass} required /></FormField>
+                        </div>
+                        <FormField label={t('status')} id="STATUS" required>
+                            <select name="STATUS" value={formData.STATUS} onChange={handleChange} className={formInputClass}>
+                                <option value="active">{t('active')}</option>
+                                <option value="inactive">{t('inactive')}</option>
+                            </select>
+                        </FormField>
                     </main>
                     <footer className="px-6 py-4 bg-gray-900/50 flex justify-end gap-3 mt-auto">
                         <button type="button" onClick={onClose} className="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-lg">{t('cancel')}</button>

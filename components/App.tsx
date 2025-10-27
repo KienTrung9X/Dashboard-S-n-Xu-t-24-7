@@ -15,8 +15,10 @@ import {
     addSparePart,
     updateSparePart,
     toggleFlagForOrder,
+    getEnrichedSparePartDetails,
+    addDefectRecord,
 } from '../services/dataService';
-import { DashboardData, EnrichedErrorReport, NewErrorReportData, UpdateErrorData, ErrorReportStatus, NewMaintenanceOrderData, EnrichedDefectRecord, MachineInfo, NewMachineData, SparePart, EnrichedMaintenanceOrder, McPartPurchaseRequest, ConsumablePurchaseRequest, PurchaseStatus, NewConsumableRequestData, NewMcPartRequestData, NewSparePartData, EnrichedMaintenanceSchedule, McPartOrder } from '../types';
+import { DashboardData, EnrichedErrorReport, NewErrorReportData, UpdateErrorData, ErrorReportStatus, NewMaintenanceOrderData, EnrichedDefectRecord, MachineInfo, NewMachineData, SparePart, EnrichedMaintenanceOrder, McPartPurchaseRequest, ConsumablePurchaseRequest, PurchaseStatus, NewConsumableRequestData, NewMcPartRequestData, NewSparePartData, EnrichedMaintenanceSchedule, McPartOrder, EnrichedSparePart, NewDefectData } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
 
 // UI Components
@@ -29,7 +31,7 @@ import ParetoChart from './ParetoChart';
 import SimpleBarChart from '../services/SimpleBarChart';
 import TrendChart from '../TrendChart';
 import BoxplotChart from './BoxplotChart';
-import HeatmapChart from '../HeatmapChart';
+import HeatmapChart from './HeatmapChart';
 import Top5Table from './Top5Table';
 import StackedBarChart from './StackedBarChart';
 import DefectTrendChart from './DefectTrendChart';
@@ -51,13 +53,18 @@ import McPartRequestModal from './McPartRequestModal';
 import SparePartEditModal from './SparePartEditModal';
 import NewMcPartRequestModal from './NewMcPartRequestModal';
 import MaintenanceScheduleView from './MaintenanceSchedule';
+import DeploymentChecklistModal from './DeploymentChecklistModal';
+import DefectsPieChart from './DefectsPieChart';
+import DataEntryModal from './DataEntryModal';
+import DefectLogTable from './DefectLogTable';
+import DefectDetailsModal from './DefectDetailsModal';
 
 
 // Icons
-// FIX: Imported missing `CheckCircle` icon from lucide-react.
-import { LayoutDashboard, BarChart3, ShieldAlert, AlertTriangle, ListChecks, Database, HelpCircle, PlusCircle, Grid, Wrench, PackageSearch, ShoppingCart, Sun, Moon, Languages, Loader2, CalendarClock, Truck, CheckCircle } from 'lucide-react';
+// FIX: Import 'Plus' icon from 'lucide-react' to resolve 'Cannot find name' error.
+import { LayoutDashboard, BarChart3, ShieldAlert, AlertTriangle, ListChecks, Database, HelpCircle, PlusCircle, Grid, Wrench, PackageSearch, ShoppingCart, Sun, Moon, Languages, Loader2, CalendarClock, Truck, CheckCircle, ClipboardList, Package, ListOrdered, Plus } from 'lucide-react';
 
-type Tab = 'shopFloor' | 'overview' | 'performance' | 'quality' | 'downtime' | 'errorLog' | 'maintenance' | 'purchasing';
+type Tab = 'shopFloor' | 'overview' | 'performance' | 'quality' | 'downtime' | 'errorLog' | 'maintenance' | 'purchasing' | 'benchmarking';
 type MaintenanceSubTab = 'dashboard' | 'mcPartInventory' | 'purchaseOrders' | 'pmSchedule';
 type PurchasingSubTab = 'mcPart' | 'consumable';
 
@@ -235,6 +242,132 @@ const ConsumablePurchasing: React.FC<ConsumablePurchasingProps> = ({ requests, t
 
 // --- END OF IN-FILE PURCHASING COMPONENTS ---
 
+// --- START OF IN-FILE BENCHMARKING COMPONENTS ---
+
+interface KpiProgressProps {
+  label: string;
+  actual: number;
+  target: number;
+  formatAs: 'number' | 'percent';
+}
+
+const KpiProgress: React.FC<KpiProgressProps> = ({ label, actual, target, formatAs }) => {
+  const progress = target > 0 ? (actual / target) * 100 : 0;
+  const isExceeded = progress > 100;
+  const isBelowTarget = progress < 90;
+
+  let progressBarColor = 'bg-cyan-500';
+  if (isExceeded) progressBarColor = 'bg-green-500';
+  if (isBelowTarget) progressBarColor = 'bg-red-500';
+  
+  const formatValue = (value: number) => {
+    if (formatAs === 'percent') {
+        return `${(value * 100).toFixed(1)}%`;
+    }
+    return value.toLocaleString();
+  };
+
+  return (
+    <div className="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg">
+      <div className="flex justify-between items-baseline mb-1">
+        <span className="font-semibold text-gray-700 dark:text-gray-200">{label}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          Target: {formatValue(target)}
+        </span>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
+          <div
+            className={`h-4 rounded-full transition-all duration-500 ease-out ${progressBarColor}`}
+            style={{ width: `${Math.min(progress, 100)}%` }}
+          ></div>
+        </div>
+        <div className="w-28 text-right">
+            <span className={`font-bold text-lg ${isBelowTarget ? 'text-red-500' : 'text-gray-800 dark:text-gray-100'}`}>
+                {formatValue(actual)}
+            </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+interface BenchmarkDashboardProps {
+  data: DashboardData;
+  theme: 'light' | 'dark';
+}
+
+const BenchmarkDashboard: React.FC<BenchmarkDashboardProps> = ({ data, theme }) => {
+  const { t } = useTranslation();
+  const { oeeByLine, targets } = data.benchmarking;
+  const { productionByLine } = data.summary;
+
+  const benchmarkData = useMemo(() => {
+    // Filter for line-level targets for this component
+    const lineTargets = targets.filter(t => t.level === 'Line' && t.line_id);
+
+    return lineTargets.map(target => {
+      const actualOee = oeeByLine.find(o => o.name === target.line_id)?.value || 0;
+      const actualOutput = productionByLine.find(p => p.name === target.line_id)?.value || 0;
+      
+      const lineDefects = data.quality.defectRecordsForPeriod
+        .filter(d => {
+            const machine = data.masterData.machines.find(m => m.id === d.machine_id);
+            return machine?.LINE_ID === target.line_id;
+        })
+        .reduce((sum, d) => sum + d.quantity, 0);
+      
+      const totalProductionForLine = actualOutput + lineDefects;
+      const actualDefectRate = totalProductionForLine > 0 ? lineDefects / totalProductionForLine : 0;
+
+      return {
+        lineId: target.line_id,
+        targetOee: target.target_oee,
+        actualOee,
+        targetOutput: target.target_output,
+        actualOutput,
+        targetDefectRate: target.target_defect_rate,
+        actualDefectRate,
+      };
+    });
+  }, [oeeByLine, targets, productionByLine, data.quality.defectRecordsForPeriod, data.masterData.machines]);
+  
+  const getBarColor = (value: number) => {
+    if (value >= 0.85) return '#22c55e';
+    if (value >= 0.70) return '#facc15';
+    return '#ef4444';
+  };
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('oeeBenchmarkTitle')}</h2>
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+            <SimpleBarChart data={oeeByLine.sort((a,b) => b.value - a.value)} xAxisKey="name" barKey="value" fillColor={getBarColor} isPercentage theme={theme} />
+        </div>
+      </section>
+      
+      <section>
+        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('targetVsActualTitle')}</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {benchmarkData.map(d => (
+                <div key={d.lineId} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md space-y-3">
+                    <h3 className="text-xl font-bold">{t('line')} {d.lineId}</h3>
+                    <KpiProgress label={t('oee')} actual={d.actualOee} target={d.targetOee} formatAs="percent" />
+                    <KpiProgress label={t('output')} actual={d.actualOutput} target={d.targetOutput} formatAs="number" />
+                    <KpiProgress label={t('defectRate')} actual={d.actualDefectRate} target={d.targetDefectRate} formatAs="percent" />
+                </div>
+            ))}
+        </div>
+      </section>
+    </div>
+  );
+};
+
+
+// --- END OF IN-FILE BENCHMARKING COMPONENTS ---
+
 
 const App: React.FC = () => {
     // State declarations
@@ -253,6 +386,7 @@ const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<Tab>('shopFloor');
     const [maintenanceSubTab, setMaintenanceSubTab] = useState<MaintenanceSubTab>('dashboard');
     const [purchasingSubTab, setPurchasingSubTab] = useState<PurchasingSubTab>('mcPart');
+    const [pmScheduleFilter, setPmScheduleFilter] = useState<'all' | 'Overdue' | 'Due soon' | 'On schedule'>('all');
 
 
     // Filter states
@@ -284,13 +418,16 @@ const App: React.FC = () => {
     const [maintenanceOrderDefaults, setMaintenanceOrderDefaults] = useState<Partial<NewMaintenanceOrderData> | undefined>(undefined);
     const [isMachineModalOpen, setIsMachineModalOpen] = useState(false);
     const [machineToEdit, setMachineToEdit] = useState<MachineInfo | null>(null);
-    const [selectedSparePart, setSelectedSparePart] = useState<SparePart | null>(null);
+    const [selectedSparePart, setSelectedSparePart] = useState<EnrichedSparePart | null>(null);
     const [isConsumableRequestModalOpen, setIsConsumableRequestModalOpen] = useState(false);
     const [isMcPartRequestModalOpen, setIsMcPartRequestModalOpen] = useState(false);
     const [isNewMcPartRequestModalOpen, setIsNewMcPartRequestModalOpen] = useState(false);
     const [partForMcRequest, setPartForMcRequest] = useState<SparePart | null>(null);
     const [isSparePartEditModalOpen, setIsSparePartEditModalOpen] = useState(false);
     const [partToEdit, setPartToEdit] = useState<SparePart | null>(null);
+    const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
+    const [isDataEntryModalOpen, setIsDataEntryModalOpen] = useState(false);
+    const [selectedDefectRecord, setSelectedDefectRecord] = useState<EnrichedDefectRecord | null>(null);
 
     
     const [focusedLine, setFocusedLine] = useState<string | null>(null);
@@ -298,564 +435,477 @@ const App: React.FC = () => {
     // Theme effect
     useEffect(() => {
         const root = window.document.documentElement;
-        root.classList.remove(theme === 'dark' ? 'light' : 'dark');
+        root.classList.remove('light', 'dark');
         root.classList.add(theme);
         localStorage.setItem('theme', theme);
     }, [theme]);
-    
-    // Data fetching effect
-    useEffect(() => {
-        const controller = new AbortController();
-        const fetchData = async () => {
-            setIsLoading(true);
-            setError(null);
-            try {
-                // The signal is no longer needed for mock data, but is good practice
-                const result = await getDashboardData(
-                    filters.startDate, filters.endDate, filters.area, filters.shift, filters.status, focusedLine
-                );
-                setData(result);
-            } catch (err: any) {
-                if (err.name !== 'AbortError') {
-                    console.error("Failed to fetch dashboard data:", err);
-                    setError("Could not load dashboard data. Please try again later.");
-                }
-            } finally {
-                if (!controller.signal.aborted) {
-                    setIsLoading(false);
-                }
-            }
-        };
-        fetchData();
-        return () => controller.abort();
+
+    const fetchData = useCallback(() => {
+        setIsLoading(true);
+        setError(null);
+        getDashboardData(filters.startDate, filters.endDate, filters.area, filters.shift, filters.status, focusedLine)
+            .then(setData)
+            .catch(err => {
+                console.error("Failed to fetch data:", err);
+                setError("Could not load dashboard data.");
+            })
+            .finally(() => setIsLoading(false));
     }, [filters, focusedLine]);
 
-    const forceDataRefresh = () => setFilters(f => ({...f}));
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
-    // Handlers
-    const handleFilterChange = useCallback((newFilters: any) => setFilters(newFilters), []);
-    const handleClearFilters = useCallback(() => {
-        setFilters({
-            startDate: defaultDate, endDate: defaultDate, area: defaultArea,
-            shift: 'all', mode: 'single', status: 'all'
-        });
-        setThresholds({ oee: 80, availability: 90, performance: 95, quality: 99 });
-        setFocusedLine(null);
-    }, [defaultDate, defaultArea]);
-    
-    const handleOpenCreateReportModal = () => {
-        setReportToUpdate(null);
-        setIsErrorReportModalOpen(true);
+    const toggleTheme = () => {
+        setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
     };
 
-    const handleOpenUpdateReportModal = (report: EnrichedErrorReport) => {
+    const handleFilterChange = useCallback((newFilters: any) => {
+        setFilters(prev => ({...prev, ...newFilters}));
+    }, []);
+
+    const handleClearFilters = useCallback(() => {
+        setFilters({
+            startDate: defaultDate,
+            endDate: defaultDate,
+            area: defaultArea,
+            shift: 'all',
+            mode: 'single',
+            status: 'all',
+        });
+        setFocusedLine(null);
+    }, [defaultDate, defaultArea]);
+
+    const handleMachineSelect = (machineId: string) => {
+        setSelectedMachineId(machineId);
+    };
+
+    const handleOpenUpdateModal = (report: EnrichedErrorReport) => {
         setReportToUpdate(report);
         setIsErrorReportModalOpen(true);
     };
 
-    const handleErrorReportSubmit = (newReportData: NewErrorReportData) => {
-        addErrorReport(newReportData);
+    const handleReportSubmit = (reportData: NewErrorReportData) => {
+        addErrorReport(reportData);
         setIsErrorReportModalOpen(false);
-        forceDataRefresh();
+        fetchData();
     };
 
-    const handleErrorReportUpdate = (reportId: number, updateData: UpdateErrorData, newStatus: ErrorReportStatus) => {
+    const handleReportUpdate = (reportId: number, updateData: UpdateErrorData, newStatus: ErrorReportStatus) => {
         updateErrorReport(reportId, updateData, newStatus);
         setIsErrorReportModalOpen(false);
-        forceDataRefresh();
+        setReportToUpdate(null);
+        fetchData();
     };
 
-    const handleStatusUpdate = (reportId: number, newStatus: ErrorReportStatus) => {
-        // This is for simple status transitions like "Reported" -> "In Progress"
-        updateErrorReport(reportId, {}, newStatus);
-        forceDataRefresh();
-    };
-
-    const handleOpenCreateMaintOrderModal = (defaults?: Partial<NewMaintenanceOrderData>) => {
-        setMaintenanceOrderDefaults(defaults);
-        setIsMaintenanceOrderModalOpen(true);
-    };
-
-    const handleMaintOrderSubmit = (newOrderData: NewMaintenanceOrderData) => {
-        addMaintenanceOrder(newOrderData);
+    const handleMaintenanceOrderSubmit = (orderData: NewMaintenanceOrderData) => {
+        addMaintenanceOrder(orderData);
         setIsMaintenanceOrderModalOpen(false);
-        forceDataRefresh();
-    };
-    
-    const handleOpenAddMachineModal = () => {
-        setMachineToEdit(null);
-        setIsMachineModalOpen(true);
+        setMaintenanceOrderDefaults(undefined);
+        fetchData();
     };
 
-    const handleOpenEditMachineModal = (machine: MachineInfo) => {
-        setMachineToEdit(machine);
-        setIsMachineModalOpen(true);
-    };
-    
-    const handleMachineModalSubmit = (data: NewMachineData, id: number | null) => {
+    const handleMachineSubmit = (machineData: NewMachineData, id: number | null) => {
         if (id) {
-            updateMachine(id, data);
+            updateMachine(id, machineData);
         } else {
-            addMachine(data);
+            addMachine(machineData);
         }
         setIsMachineModalOpen(false);
-        forceDataRefresh();
+        setMachineToEdit(null);
+        fetchData();
     };
 
     const handleUpdateMachinePosition = (machineId: number, newPosition: { x: number; y: number }) => {
-        updateMachine(machineId, { x: newPosition.x, y: newPosition.y });
-        forceDataRefresh(); 
-    };
-
-    const handleOpenSparePartDetails = (part: SparePart) => {
-        setSelectedSparePart(part);
-    };
-
-    const handleConsumableRequestSubmit = (data: NewConsumableRequestData) => {
-        addConsumableRequest(data);
-        setIsConsumableRequestModalOpen(false);
-        forceDataRefresh();
+        updateMachine(machineId, newPosition);
+        fetchData();
     };
     
-    const handleMcPartRequestSubmit = (data: NewMcPartRequestData) => {
-        addMcPartRequest(data);
+    const handleConsumableRequestSubmit = (requestData: NewConsumableRequestData) => {
+        addConsumableRequest(requestData);
+        setIsConsumableRequestModalOpen(false);
+        fetchData();
+    };
+
+    const handleMcPartRequestSubmit = (requestData: NewMcPartRequestData) => {
+        addMcPartRequest(requestData);
         setIsMcPartRequestModalOpen(false);
-        setPurchasingSubTab('mcPart'); // Switch tab to see the new request
-        forceDataRefresh();
-    };
-
-     const handleNewMcPartRequestSubmit = (data: NewMcPartRequestData) => {
-        addMcPartRequest(data);
         setIsNewMcPartRequestModalOpen(false);
-        forceDataRefresh();
+        setPartForMcRequest(null);
+        fetchData();
     };
-
-    const handleOpenMcPartRequestModal = (part: SparePart) => {
-        setPartForMcRequest(part);
-        setIsMcPartRequestModalOpen(true);
-    };
-
-    const handleSparePartSubmit = (data: NewSparePartData, id: number | null) => {
+    
+    const handleSparePartSubmit = (partData: NewSparePartData, id: number | null) => {
         if (id) {
-            // @ts-ignore
-            updateSparePart(id, data);
+            updateSparePart(id, partData);
         } else {
-            // @ts-ignore
-            addSparePart(data);
+            addSparePart(partData);
         }
         setIsSparePartEditModalOpen(false);
-        forceDataRefresh();
+        setPartToEdit(null);
+        fetchData();
     };
 
-    const handleOpenSparePartEditModal = (part: SparePart | null) => {
-        setPartToEdit(part);
-        setIsSparePartEditModalOpen(true);
-    };
-
-    const handleToggleFlagForOrder = (partId: number) => {
+    const handleToggleFlag = (partId: number) => {
         toggleFlagForOrder(partId);
-        forceDataRefresh();
+        fetchData();
     };
-
-    const handleCreateMaintOrderFromSchedule = (scheduleItem: EnrichedMaintenanceSchedule) => {
-        if (!data) return;
-        // Find a specific template for the machine first, then fall back to a general one (machine_id: 0)
-        const template = data.masterData.pmPartsTemplates.find(
-            t => t.pm_type === scheduleItem.pm_type && t.machine_id === scheduleItem.machine_id
-        ) || data.masterData.pmPartsTemplates.find(
-            t => t.pm_type === scheduleItem.pm_type && t.machine_id === 0
-        );
-
-        const parts_used = template?.parts.map(p => ({ part_id: p.part_id, qty_used: p.qty })) || [];
-
-        const defaults: Partial<NewMaintenanceOrderData> = {
-            machine_id: scheduleItem.machine_id,
-            type: 'PM',
-            symptom: `${scheduleItem.pm_type} for ${scheduleItem.MACHINE_ID}`,
-            created_at: scheduleItem.next_pm_date, // Schedule it for the day it's due
-            parts_used,
-        };
-        handleOpenCreateMaintOrderModal(defaults);
-    };
-
-
-    const selectedMachineInfo = useMemo(() => {
-        if (!selectedMachineId) return null;
-        return getMachineInfo(selectedMachineId);
-    }, [selectedMachineId]);
     
-    const selectedMachineProduction = useMemo(() => {
+    const handleDefectRecordSubmit = (defectData: NewDefectData) => {
+        addDefectRecord(defectData);
+        setIsDataEntryModalOpen(false);
+        fetchData();
+    };
+
+    const openCreateReportModal = () => {
+        setReportToUpdate(null);
+        setIsErrorReportModalOpen(true);
+    };
+
+    const openCreateOrderModal = (defaults?: Partial<NewMaintenanceOrderData>) => {
+        setMaintenanceOrderDefaults(defaults);
+        setIsMaintenanceOrderModalOpen(true);
+    };
+    
+    const handleNavigateToSchedule = (filter: 'overdue' | 'dueSoon' | 'all') => {
+        const newFilter = filter === 'overdue' ? 'Overdue' : filter === 'dueSoon' ? 'Due soon' : 'all';
+        setPmScheduleFilter(newFilter);
+        setMaintenanceSubTab('pmSchedule');
+    };
+
+    const selectedMachineDetails = useMemo(() => {
         if (!selectedMachineId || !data) return null;
-        return data.productionLog.find(p => p.MACHINE_ID === selectedMachineId) || null;
+        const machineInfo = getMachineInfo(selectedMachineId);
+        const productionRecord = data.productionLog.find(p => p.MACHINE_ID === selectedMachineId) ?? null;
+        const downtimeRecords = data.downtimeRecords.filter(d => d.MACHINE_ID === selectedMachineId);
+        const errorHistory = data.errorReports.filter(r => r.MACHINE_ID === selectedMachineId);
+        const maintenanceHistory = data.maintenanceOrders.filter(o => o.MACHINE_ID === selectedMachineId && o.status === 'Done');
+        const plannedMaintenance = data.maintenanceOrders.filter(o => o.MACHINE_ID === selectedMachineId && o.status !== 'Done' && o.type === 'PM');
+        return { machineInfo, productionRecord, downtimeRecords, errorHistory, maintenanceHistory, plannedMaintenance };
     }, [selectedMachineId, data]);
-
-    const selectedMachineDowntime = useMemo(() => {
-        if (!selectedMachineId || !data) return [];
-        return data.downtimeRecords.filter(d => d.MACHINE_ID === selectedMachineId);
-    }, [selectedMachineId, data]);
-
-    const selectedMachineErrorHistory = useMemo((): EnrichedErrorReport[] => {
-        if (!selectedMachineId || !data) return [];
-        const machine = data.allMachineInfo.find(m => m.MACHINE_ID === selectedMachineId);
-        if (!machine) return [];
-        return data.errorReports
-            .filter(r => r.machine_id === machine.id)
-            .sort((a, b) => new Date(b.report_time).getTime() - new Date(a.report_time).getTime())
-            .slice(0, 10);
-    }, [selectedMachineId, data]);
-
-    const selectedMachineMaintenanceHistory = useMemo((): EnrichedMaintenanceOrder[] => {
-        if (!selectedMachineId || !data) return [];
-        const machine = data.allMachineInfo.find(m => m.MACHINE_ID === selectedMachineId);
-        if (!machine) return [];
-        return data.maintenanceOrders
-            .filter(o => o.machine_id === machine.id && o.status === 'Done')
-            .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime())
-            .slice(0, 10);
-    }, [selectedMachineId, data]);
-
-    const selectedMachinePlannedMaintenance = useMemo((): EnrichedMaintenanceOrder[] => {
-        if (!selectedMachineId || !data) return [];
-        const machine = data.allMachineInfo.find(m => m.MACHINE_ID === selectedMachineId);
-        if (!machine) return [];
-        return data.maintenanceOrders
-            .filter(o => o.machine_id === machine.id && (o.status === 'Open' || o.status === 'InProgress') && o.type === 'PM')
-            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    }, [selectedMachineId, data]);
-
-    const openMaintenanceOrders = useMemo((): EnrichedMaintenanceOrder[] => {
-        if (!data) return [];
-        return data.maintenanceOrders.filter(o => o.status === 'Open' || o.status === 'InProgress');
-    }, [data]);
-
-    const defectParetoData = useMemo(() => {
-        if (!data?.quality.defectPareto) return [];
-        const sorted = [...data.quality.defectPareto].sort((a,b) => b.value - a.value);
-        const total = sorted.reduce((sum, item) => sum + item.value, 0);
-        let cumulative = 0;
-        return sorted.map(item => {
-            cumulative += item.value;
-            return {
-                ...item,
-                cumulative: total > 0 ? (cumulative / total) * 100 : 0
-            };
-        });
-    }, [data]);
-
-
-    const handleBarClick = useCallback((payload: any) => {
-        if (payload?.name) {
-            setFocusedLine(line => line === payload.name ? null : payload.name);
-        }
-    }, []);
     
+    const openPartDetails = (part: SparePart) => {
+        const enrichedPart = getEnrichedSparePartDetails(part);
+        setSelectedSparePart(enrichedPart);
+    };
+
     const menuSections = [
-        { title: t('actions'), items: [ 
-            { label: t('createErrorReport'), icon: <PlusCircle size={16} />, onClick: handleOpenCreateReportModal },
-            { label: t('createNewOrder'), icon: <Wrench size={16} />, onClick: () => handleOpenCreateMaintOrderModal() },
-            { label: t('addMachine'), icon: <PlusCircle size={16} />, onClick: handleOpenAddMachineModal },
-        ]},
-        { title: t('system'), items: [ { label: t('viewDbTables'), icon: <Database size={16} />, onClick: () => setIsDbPanelOpen(true) }, { label: t('helpUserGuide'), icon: <HelpCircle size={16} />, onClick: () => setIsHelpModalOpen(true) }, ]}
+        {
+            title: t('actions'),
+            items: [
+                { label: t('reportDefectDetail'), onClick: () => setIsDataEntryModalOpen(true), icon: <PlusCircle size={16} /> },
+                { label: t('createErrorReport'), onClick: openCreateReportModal, icon: <AlertTriangle size={16} /> },
+                { label: t('createNewOrder'), onClick: () => openCreateOrderModal(), icon: <Wrench size={16} /> },
+                { label: t('runChecklist'), onClick: () => setIsChecklistModalOpen(true), icon: <ListChecks size={16} /> },
+            ],
+        },
+        {
+            title: t('system'),
+            items: [
+                { label: t('viewDbTables'), onClick: () => setIsDbPanelOpen(true), icon: <Database size={16} /> },
+                { label: t('viewDeploymentChecklist'), onClick: () => setIsChecklistModalOpen(true), icon: <ClipboardList size={16} /> },
+                { label: t('helpUserGuide'), onClick: () => setIsHelpModalOpen(true), icon: <HelpCircle size={16} /> },
+            ],
+        },
     ];
 
-    const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-        { id: 'shopFloor', label: t('shopFloorTab'), icon: <Grid size={18} /> },
-        { id: 'overview', label: t('overviewTab'), icon: <LayoutDashboard size={18} /> },
-        { id: 'performance', label: t('performanceTab'), icon: <BarChart3 size={18} /> },
-        { id: 'quality', label: t('qualityTab'), icon: <ShieldAlert size={18} /> },
-        { id: 'downtime', label: t('downtimeTab'), icon: <AlertTriangle size={18} /> },
-        { id: 'errorLog', label: t('errorLogTab'), icon: <ListChecks size={18} /> },
-        { id: 'maintenance', label: t('maintenanceTab'), icon: <Wrench size={18} /> },
-        { id: 'purchasing', label: t('purchasingTab'), icon: <ShoppingCart size={18} /> },
-    ];
+    const tabConfig = {
+      shopFloor: { icon: <Grid size={18} />, label: t('shopFloorTab') },
+      overview: { icon: <LayoutDashboard size={18} />, label: t('overviewTab') },
+      performance: { icon: <BarChart3 size={18} />, label: t('performanceTab') },
+      quality: { icon: <CheckCircle size={18} />, label: t('qualityTab') },
+      downtime: { icon: <ShieldAlert size={18} />, label: t('downtimeTab') },
+      errorLog: { icon: <AlertTriangle size={18} />, label: t('errorLogTab') },
+      maintenance: { icon: <Wrench size={18} />, label: t('maintenanceTab') },
+      purchasing: { icon: <ShoppingCart size={18} />, label: t('purchasingTab') },
+      benchmarking: { icon: <ListOrdered size={18} />, label: t('benchmarkingTab') },
+    };
+
+    const tabsWithGlobalFilter = useMemo(() => ['overview', 'performance', 'quality', 'downtime'], []);
+    const shouldShowFilterBar = tabsWithGlobalFilter.includes(activeTab);
 
     const renderTabContent = () => {
         if (!data) return null;
         switch (activeTab) {
-            case 'shopFloor': return (
-                 <section>
-                    <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('shopFloorStatusTitle')}</h2>
-                    <ShopFloorLayout 
-                        allMachines={data.allMachineInfo} 
-                        machineStatus={data.machineStatus} 
-                        onMachineSelect={setSelectedMachineId}
-                        onAddMachine={handleOpenAddMachineModal}
-                        onEditMachine={handleOpenEditMachineModal}
-                        onUpdateMachinePosition={handleUpdateMachinePosition}
-                    />
-                </section>
-            );
-            case 'overview': return (
-                <div className="space-y-6">
-                    <section>
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('kpiTitle')}</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                            <div className="lg:col-span-2"><OeeGauge value={data.summary.avgOee} availability={data.summary.avgAvailability} performance={data.summary.avgPerformance} quality={data.summary.avgQuality} theme={theme} oeeThreshold={thresholds.oee} /></div>
-                            <KpiCard title={t('totalProduction')} value={data.summary.totalProduction} unit=" pcs" precision={0} />
-                            <KpiCard title={t('totalDefects')} value={data.summary.totalDefects} unit=" pcs" precision={0} />
-                            <KpiCard title={t('totalDowntime')} value={data.summary.totalDowntime} unit=" min" precision={0} />
-                        </div>
-                    </section>
-                     <AiAnalysis data={data} filters={filters} />
-                    <section>
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-semibold text-cyan-400 border-l-4 border-cyan-400 pl-3">{t('productionLogTitle')}</h2>
-                        </div>
-                        <ProductionLogTable 
-                            data={data.productionLog} 
-                            onMachineSelect={setSelectedMachineId} 
-                            oeeThreshold={thresholds.oee / 100}
-                            allDefectTypes={data.masterData.defectTypes}
-                            allDefectRecords={data.allDefectRecords}
-                        />
-                    </section>
-                </div>
-            );
-            case 'performance': return (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="lg:col-span-2"><h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('oeeTrendTitle')}</h2><TrendChart data={data.performance.sevenDayTrend} lines={[{ dataKey: 'oee', stroke: '#22d3ee', name: 'OEE' }]} isPercentage theme={theme} areaLines={['oee']} targetLines={[{value: thresholds.oee/100, label: 'Target', stroke: '#f87171'}]} /></div>
-                    <div><h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('productionDistributionTitle')}</h2><BoxplotChart data={data.performance.productionBoxplot} theme={theme} /></div>
-                    <div><h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('oeeHeatmapTitle')}</h2><HeatmapChart data={data.performance.oeeHeatmap} theme={theme} /></div>
-                </div>
-            );
-            case 'quality': return (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="lg:col-span-2">
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('defectParetoTitle')}</h2>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
-                            <ParetoChart data={defectParetoData} barKey="value" lineKey="cumulative" barColor="#ef4444" lineColor="#38bdf8" theme={theme} />
-                        </div>
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('top5DefectsTitle')}</h2>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md h-80">
-                            <Top5Table 
-                                headers={[t('line'), t('defectRate'), t('totalDefects')]} 
-                                data={data.quality.top5DefectLines.map(line => ({ 
-                                    col1: line.lineId, 
-                                    col2: `${(line.defectRate * 100).toFixed(2)}%`, 
-                                    col3: line.totalDefects.toLocaleString()
-                                }))} 
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('defectsByRootCauseTitle')}</h2>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md h-80">
-                           <SimpleBarChart data={data.quality.defectsByRootCause} xAxisKey="name" barKey="value" fillColor="#f97316" theme={theme} />
-                        </div>
-                    </div>
-                     <div className="lg:col-span-2">
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('defectCountTrendTitle')}</h2>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
-                            <DefectTrendChart data={data.quality.defectTrend} theme={theme} />
-                        </div>
-                    </div>
-                </div>
-            );
-            case 'downtime': return (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="lg:col-span-2">
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('downtimeParetoTitle')}</h2>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
-                            <DowntimeParetoChart data={data.downtime.downtimePareto} theme={theme} />
-                        </div>
-                    </div>
-                    <div className="lg:col-span-2">
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('downtimeTrendTitle')}</h2>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
-                            <TrendChart 
-                                data={data.downtime.downtimeTrend} 
-                                lines={[{ dataKey: 'downtime', stroke: '#f97316', name: 'Downtime (min)' }]} 
-                                theme={theme}
-                                areaLines={['downtime']}
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('top5DowntimeTitle')}</h2>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md h-80">
-                            <Top5Table 
-                                headers={[t('machineId'), t('totalDowntime')]} 
-                                data={data.downtime.top5DowntimeMachines.map(d => ({ 
-                                    col1: d.machineId, 
-                                    col2: `${d.totalDowntime.toFixed(0)} min`
-                                }))} 
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('downtimeByLineTitle')}</h2>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md h-80">
-                            <StackedBarChart 
-                                data={data.downtime.downtimeByLine} 
-                                keys={data.downtime.uniqueDowntimeReasons} 
-                                theme={theme} 
-                            />
-                        </div>
-                    </div>
-                </div>
-            );
-            case 'errorLog': return (
-                <section>
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-2xl font-semibold text-cyan-400 border-l-4 border-cyan-400 pl-3">{t('errorLogTitle')}</h2>
-                        <button 
-                            onClick={handleOpenCreateReportModal}
-                            className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center gap-2 transition-transform transform hover:scale-105"
-                        >
-                            <PlusCircle size={16} />
-                            {t('createErrorReport')}
-                        </button>
-                    </div>
-                    <ErrorLogTable 
-                        reports={data.errorReports} 
-                        onOpenUpdateModal={handleOpenUpdateReportModal}
-                        onStatusUpdate={handleStatusUpdate}
-                    />
-                </section>
-            );
-            case 'maintenance':
-                const subTabClass = (tabName: MaintenanceSubTab) =>
-                    `px-3 py-2 font-medium text-sm rounded-md focus:outline-none transition-colors flex items-center gap-2 ${
-                    maintenanceSubTab === tabName
-                        ? 'bg-cyan-500 text-white'
-                        : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-                    }`;
-
+            case 'shopFloor':
+                return <ShopFloorLayout 
+                    allMachines={data.allMachineInfo} 
+                    machineStatus={data.machineStatus}
+                    onMachineSelect={handleMachineSelect}
+                    onAddMachine={() => { setMachineToEdit(null); setIsMachineModalOpen(true); }}
+                    onEditMachine={(machine) => { setMachineToEdit(machine); setIsMachineModalOpen(true); }}
+                    onUpdateMachinePosition={handleUpdateMachinePosition}
+                />;
+            case 'overview':
+                const paretoData = [...data.quality.defectPareto].sort((a,b) => b.value - a.value);
+                const totalDefectsForPareto = paretoData.reduce((sum, item) => sum + item.value, 0);
+                let cumulative = 0;
+                const defectParetoWithCumulative = paretoData.map(item => {
+                    cumulative += item.value;
+                    return { ...item, cumulative: (cumulative / totalDefectsForPareto) * 100 };
+                });
                 return (
-                    <section>
-                        <div className="mb-4 border-b border-gray-700 pb-2">
-                            <nav className="flex space-x-2" aria-label="Maintenance Tabs">
-                                <button onClick={() => setMaintenanceSubTab('dashboard')} className={subTabClass('dashboard')}>
-                                    <LayoutDashboard size={16} /> {t('maintKpis')}
-                                </button>
-                                <button onClick={() => setMaintenanceSubTab('mcPartInventory')} className={subTabClass('mcPartInventory')}>
-                                    <PackageSearch size={16} /> {t('mcPartInventory')}
-                                </button>
-                                 <button onClick={() => setMaintenanceSubTab('purchaseOrders')} className={subTabClass('purchaseOrders')}>
-                                    <Truck size={16} /> {t('purchaseOrders')}
-                                </button>
-                                <button onClick={() => setMaintenanceSubTab('pmSchedule')} className={subTabClass('pmSchedule')}>
-                                    <CalendarClock size={16} /> {t('pmSchedule')}
-                                </button>
-                            </nav>
+                    <div className="space-y-6">
+                         <section>
+                            <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('kpiTitle')}</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <KpiCard title={t('totalProduction')} value={data.summary.totalProduction} unit=" units" precision={0} />
+                                <KpiCard title={t('totalDefects')} value={data.summary.totalDefects} unit=" units" precision={0} />
+                                <KpiCard title={t('totalDowntime')} value={data.summary.totalDowntime} unit=" min" precision={0} />
+                                <KpiCard title={t('defectRate')} value={data.summary.defectRate} unit="%" precision={2} />
+                            </div>
+                        </section>
+                        <OeeGauge value={data.summary.avgOee} availability={data.summary.avgAvailability} performance={data.summary.avgPerformance} quality={data.summary.avgQuality} theme={theme} oeeThreshold={thresholds.oee} />
+                        <AiAnalysis data={data} filters={filters} />
+                        <section>
+                            <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('productionLogTitle')}</h2>
+                            <ProductionLogTable data={data.productionLog} onMachineSelect={handleMachineSelect} oeeThreshold={thresholds.oee} allDefectTypes={data.masterData.defectTypes} allDefectRecords={data.allDefectRecords} />
+                        </section>
+                    </div>
+                );
+            case 'performance':
+                return (
+                    <div className="space-y-6">
+                        <section>
+                            <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('oeeTrendTitle')}</h2>
+                            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                <TrendChart data={data.performance.sevenDayTrend} lines={[
+                                    { dataKey: 'oee', stroke: '#22d3ee', name: 'OEE' },
+                                    { dataKey: 'availability', stroke: '#818cf8', name: 'Availability' },
+                                    { dataKey: 'performance', stroke: '#f472b6', name: 'Performance' },
+                                    { dataKey: 'quality', stroke: '#a78bfa', name: 'Quality' },
+                                ]} isPercentage theme={theme} />
+                            </div>
+                        </section>
+                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <section>
+                                <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('productionDistributionTitle')}</h2>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                    <BoxplotChart data={data.performance.productionBoxplot} theme={theme} />
+                                </div>
+                            </section>
+                            <section>
+                                <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('oeeHeatmapTitle')}</h2>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                    <HeatmapChart data={data.performance.oeeHeatmap} theme={theme} />
+                                </div>
+                            </section>
                         </div>
-                        {maintenanceSubTab === 'dashboard' ? (
-                            <MaintenanceDashboard 
-                                data={data.maintenance}
-                                onOpenModal={handleOpenCreateMaintOrderModal}
-                                onNavigateToInventory={() => setMaintenanceSubTab('mcPartInventory')}
-                                onNavigateToSchedule={() => setMaintenanceSubTab('pmSchedule')}
-                                theme={theme}
-                                onCreatePo={handleOpenMcPartRequestModal}
-                            />
-                        ) : maintenanceSubTab === 'mcPartInventory' ? (
-                            <SparePartsInventory 
-                                parts={data.maintenance.spareParts} 
-                                onPartSelect={handleOpenSparePartDetails}
-                                onAddNewPart={() => handleOpenSparePartEditModal(null)}
-                                onEditPart={handleOpenSparePartEditModal}
-                                onToggleFlag={handleToggleFlagForOrder}
-                                onCreateRequest={handleOpenMcPartRequestModal}
-                            />
-                        ) : maintenanceSubTab === 'purchaseOrders' ? (
-                            <McPartPurchaseOrders orders={data.maintenance.mcPartOrders} t={t} />
-                        ) : (
-                            <MaintenanceScheduleView 
-                                schedule={data.maintenance.pmSchedule}
-                                onCreateWorkOrder={handleCreateMaintOrderFromSchedule}
-                            />
-                        )}
-                    </section>
+                    </div>
+                );
+            case 'quality':
+                 const paretoQuality = [...data.quality.defectPareto].sort((a,b) => b.value - a.value);
+                 const totalDefectsForParetoQuality = paretoQuality.reduce((sum, item) => sum + item.value, 0);
+                 let cumulativeQuality = 0;
+                 const defectParetoWithCumulativeQuality = paretoQuality.map(item => {
+                     cumulativeQuality += item.value;
+                     return { ...item, cumulative: (cumulativeQuality / totalDefectsForParetoQuality) * 100 };
+                 });
+                return (
+                     <div className="space-y-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                           <section>
+                                <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('defectParetoTitle')}</h2>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                    <ParetoChart data={defectParetoWithCumulativeQuality} barKey="value" lineKey="cumulative" barColor="#ef4444" lineColor="#f97316" theme={theme} />
+                                </div>
+                            </section>
+                             <section>
+                                <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('defectCountTrendTitle')}</h2>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                    <DefectTrendChart data={data.quality.defectTrend} theme={theme} />
+                                </div>
+                            </section>
+                        </div>
+                         <section>
+                             <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">Defects by Root Cause</h2>
+                             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                 <DefectsPieChart data={data.quality.defectsByRootCause} />
+                             </div>
+                         </section>
+                        <section>
+                            <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('defectLogTitle')}</h2>
+                            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                <DefectLogTable
+                                    data={data.quality.defectRecordsForPeriod}
+                                    onViewDetails={(defect) => setSelectedDefectRecord(defect)}
+                                />
+                            </div>
+                        </section>
+                    </div>
+                );
+            case 'downtime':
+                return (
+                    <div className="space-y-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                             <section>
+                                <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('downtimeParetoTitle')}</h2>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                    <DowntimeParetoChart data={data.downtime.downtimePareto} theme={theme} />
+                                </div>
+                            </section>
+                            <section>
+                                <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('downtimeTrendTitle')}</h2>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                    <TrendChart data={data.downtime.downtimeTrend} lines={[{ dataKey: 'downtime', stroke: '#f97316', name: 'Downtime (min)' }]} theme={theme} />
+                                </div>
+                            </section>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <section>
+                                <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('top5DowntimeTitle')}</h2>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md h-full">
+                                    <Top5Table headers={[t('machineId'), t('totalDowntime_short')]} data={data.downtime.top5DowntimeMachines.map(d => ({ col1: d.machineId, col2: d.totalDowntime }))} />
+                                </div>
+                            </section>
+                             <section>
+                                <h2 className="text-2xl font-semibold text-cyan-400 mb-4 border-l-4 border-cyan-400 pl-3">{t('downtimeByLineTitle')}</h2>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                                    <StackedBarChart data={data.downtime.downtimeByLine} keys={data.downtime.uniqueDowntimeReasons} theme={theme} />
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                );
+            case 'errorLog':
+                return <ErrorLogTable reports={data.errorReports} onOpenUpdateModal={handleOpenUpdateModal} onStatusUpdate={(id, status) => updateErrorReport(id, {}, status)} />;
+            case 'maintenance':
+                 const maintenanceNavClass = "py-2 px-4 text-sm font-medium text-center rounded-t-lg border-b-2 cursor-pointer";
+                 const activeMaintenanceNavClass = "text-cyan-400 border-cyan-400";
+                 const inactiveMaintenanceNavClass = "border-transparent text-gray-400 hover:text-cyan-400/70 hover:border-cyan-400/70";
+                 return (
+                    <div className="space-y-6">
+                        <div className="border-b border-gray-200 dark:border-gray-700">
+                            <ul className="flex flex-wrap -mb-px text-sm font-medium text-center text-gray-500 dark:text-gray-400">
+                                <li className="mr-2">
+                                    <button onClick={() => setMaintenanceSubTab('dashboard')} className={`${maintenanceNavClass} ${maintenanceSubTab === 'dashboard' ? activeMaintenanceNavClass : inactiveMaintenanceNavClass}`}>
+                                        {t('maintReport')}
+                                    </button>
+                                </li>
+                                <li className="mr-2">
+                                    <button onClick={() => setMaintenanceSubTab('mcPartInventory')} className={`${maintenanceNavClass} ${maintenanceSubTab === 'mcPartInventory' ? activeMaintenanceNavClass : inactiveMaintenanceNavClass}`}>
+                                        {t('mcPartInventory')}
+                                    </button>
+                                </li>
+                                <li className="mr-2">
+                                    <button onClick={() => setMaintenanceSubTab('purchaseOrders')} className={`${maintenanceNavClass} ${maintenanceSubTab === 'purchaseOrders' ? activeMaintenanceNavClass : inactiveMaintenanceNavClass}`}>
+                                    {t('purchaseOrders')}
+                                    </button>
+                                </li>
+                                <li className="mr-2">
+                                    <button onClick={() => setMaintenanceSubTab('pmSchedule')} className={`${maintenanceNavClass} ${maintenanceSubTab === 'pmSchedule' ? activeMaintenanceNavClass : inactiveMaintenanceNavClass}`}>
+                                        {t('pmSchedule')}
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+                        <div>
+                            {maintenanceSubTab === 'dashboard' && <MaintenanceDashboard data={data.maintenance} onOpenModal={openCreateOrderModal} onNavigateToInventory={() => setMaintenanceSubTab('mcPartInventory')} onNavigateToSchedule={handleNavigateToSchedule} onCreatePo={(part) => { setPartForMcRequest(part); setIsMcPartRequestModalOpen(true); }} theme={theme}/>}
+                            {maintenanceSubTab === 'mcPartInventory' && <SparePartsInventory parts={data.maintenance.spareParts} onPartSelect={openPartDetails} onAddNewPart={() => { setPartToEdit(null); setIsSparePartEditModalOpen(true); }} onEditPart={(part) => { setPartToEdit(part); setIsSparePartEditModalOpen(true); }} onToggleFlag={handleToggleFlag} onCreateRequest={(part) => { setPartForMcRequest(part); setIsMcPartRequestModalOpen(true); }} />}
+                            {maintenanceSubTab === 'purchaseOrders' && <McPartPurchaseOrders orders={data.maintenance.mcPartOrders} t={t} />}
+                            {maintenanceSubTab === 'pmSchedule' && <MaintenanceScheduleView schedule={data.maintenance.pmSchedule} onCreateWorkOrder={(item) => openCreateOrderModal({ machine_id: item.machine_id, type: 'PM', symptom: item.pm_type, created_at: item.next_pm_date })} initialFilter={pmScheduleFilter} />}
+                        </div>
+                    </div>
                 );
             case 'purchasing':
-                const purchasingSubTabClass = (tabName: PurchasingSubTab) =>
-                    `px-3 py-2 font-medium text-sm rounded-md focus:outline-none transition-colors ${
-                    purchasingSubTab === tabName
-                        ? 'bg-cyan-500 text-white'
-                        : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-                    }`;
-                return (
-                    <section>
-                         <div className="flex justify-between items-center mb-4">
-                            <div className="border-b border-gray-700 pb-2 flex-grow">
-                                <nav className="flex space-x-2" aria-label="Purchasing Tabs">
-                                    <button onClick={() => setPurchasingSubTab('mcPart')} className={purchasingSubTabClass('mcPart')}>
-                                        {t('mcPartPurchasing')}
-                                    </button>
-                                    <button onClick={() => setPurchasingSubTab('consumable')} className={purchasingSubTabClass('consumable')}>
-                                        {t('consumablePurchasing')}
-                                    </button>
-                                </nav>
+                 const purchasingNavClass = "py-2 px-4 text-sm font-medium text-center rounded-t-lg border-b-2 cursor-pointer";
+                 const activePurchasingNavClass = "text-cyan-400 border-cyan-400";
+                 const inactivePurchasingNavClass = "border-transparent text-gray-400 hover:text-cyan-400/70 hover:border-cyan-400/70";
+                 return (
+                     <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <div className="border-b border-gray-200 dark:border-gray-700">
+                                <ul className="flex flex-wrap -mb-px text-sm font-medium text-center text-gray-500 dark:text-gray-400">
+                                    <li className="mr-2">
+                                        <button onClick={() => setPurchasingSubTab('mcPart')} className={`${purchasingNavClass} ${purchasingSubTab === 'mcPart' ? activePurchasingNavClass : inactivePurchasingNavClass}`}>
+                                            {t('mcPartPurchasing')}
+                                        </button>
+                                    </li>
+                                    <li className="mr-2">
+                                        <button onClick={() => setPurchasingSubTab('consumable')} className={`${purchasingNavClass} ${purchasingSubTab === 'consumable' ? activePurchasingNavClass : inactivePurchasingNavClass}`}>
+                                            {t('consumablePurchasing')}
+                                        </button>
+                                    </li>
+                                </ul>
                             </div>
                             <button 
-                                onClick={() => {
-                                    if (purchasingSubTab === 'consumable') {
-                                        setIsConsumableRequestModalOpen(true);
-                                    } else {
-                                        setIsNewMcPartRequestModalOpen(true);
-                                    }
-                                }}
-                                className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center gap-2 transition-transform transform hover:scale-105 ml-4"
+                                onClick={() => purchasingSubTab === 'mcPart' ? setIsNewMcPartRequestModalOpen(true) : setIsConsumableRequestModalOpen(true)}
+                                className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center gap-2 transition-transform transform hover:scale-105"
                             >
-                                <PlusCircle size={16} />
+                                <Plus size={16} />
                                 {t('addNewRequest')}
                             </button>
                         </div>
-                        {purchasingSubTab === 'mcPart' ? (
-                            <McPartPurchasing requests={data.purchasing.mcPartRequests} t={t} />
-                        ) : (
-                            <ConsumablePurchasing requests={data.purchasing.consumableRequests} t={t} />
-                        )}
-                    </section>
+                        <div>
+                            {purchasingSubTab === 'mcPart' && <McPartPurchasing requests={data.purchasing.mcPartRequests} t={t} />}
+                            {purchasingSubTab === 'consumable' && <ConsumablePurchasing requests={data.purchasing.consumableRequests} t={t} />}
+                        </div>
+                    </div>
                 );
-            default: return null;
+            case 'benchmarking':
+                return <BenchmarkDashboard data={data} theme={theme} />;
         }
     };
 
-    return (
-        <div className={`flex h-screen bg-gray-100 dark:bg-gray-900 ${theme}`}>
-            <DatabaseSchemaPanel isOpen={isDbPanelOpen} onClose={() => setIsDbPanelOpen(false)} />
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <Loader2 size={48} className="animate-spin text-cyan-500" />
+            </div>
+        );
+    }
 
-            <main className="flex-1 flex flex-col overflow-hidden">
-                <header className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-md z-10">
-                    <div className="flex items-center justify-between p-4">
+    if (error) {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-red-900/10 text-red-400 p-4">
+                 <AlertTriangle size={48} className="mb-4" />
+                 <h1 className="text-2xl font-bold mb-2">Error Loading Data</h1>
+                 <p>{error}</p>
+            </div>
+        );
+    }
+    
+    return (
+        <div className="min-h-screen">
+             <header className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm sticky top-0 z-30 shadow-md">
+                <div className="container mx-auto px-4">
+                    <div className="flex items-center justify-between h-16">
                         <div className="flex items-center gap-4">
-                            <HamburgerMenu sections={menuSections} />
-                            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('dashboardTitle')}</h1>
+                           <HamburgerMenu sections={menuSections} />
+                           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">{t('dashboardTitle')}</h1>
                         </div>
                         <div className="flex items-center gap-4">
-                            <button onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')} className="p-2 rounded-md text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                                <Languages size={20} />
-                            </button>
-                            <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} className="p-2 rounded-md text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                                {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-                            </button>
+                           <div className="flex items-center gap-2">
+                                <button onClick={() => setLanguage('vi')} className={`px-2 py-1 text-sm rounded-md ${language === 'vi' ? 'bg-cyan-500 text-white' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}>VI</button>
+                                <button onClick={() => setLanguage('en')} className={`px-2 py-1 text-sm rounded-md ${language === 'en' ? 'bg-cyan-500 text-white' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}>EN</button>
+                           </div>
+                           <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700" aria-label="Toggle theme">
+                                {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                           </button>
                         </div>
                     </div>
-                     <nav className="px-4 border-t border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center space-x-2 overflow-x-auto">
-                            {tabs.map(tab => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`flex-shrink-0 flex items-center gap-2 px-3 py-3 text-sm font-medium transition-colors duration-200 focus:outline-none ${
-                                        activeTab === tab.id
-                                            ? 'text-cyan-500 dark:text-cyan-400 border-b-2 border-cyan-500'
-                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                                    }`}
-                                >
-                                    {tab.icon}
-                                    <span>{tab.label}</span>
-                                </button>
-                            ))}
-                        </div>
+                    <nav className="flex items-center space-x-1 overflow-x-auto -mb-px">
+                        {Object.entries(tabConfig).map(([tabKey, tabInfo]) => (
+                            <button
+                                key={tabKey}
+                                onClick={() => setActiveTab(tabKey as Tab)}
+                                className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                                    activeTab === tabKey
+                                        ? 'border-cyan-500 text-cyan-500'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-600'
+                                }`}
+                            >
+                                {tabInfo.icon}
+                                {tabInfo.label}
+                            </button>
+                        ))}
                     </nav>
-                </header>
-
-                <div className="flex-1 flex flex-col overflow-auto p-6 space-y-6">
-                    <FilterBar 
+                </div>
+            </header>
+            
+            <main className="container mx-auto p-4 md:p-6">
+                {shouldShowFilterBar && (
+                    <FilterBar
                         startDate={filters.startDate}
                         endDate={filters.endDate}
                         selectedArea={filters.area}
@@ -869,105 +919,39 @@ const App: React.FC = () => {
                         qualityThreshold={thresholds.quality}
                         onFilterChange={handleFilterChange}
                         onClearFilters={handleClearFilters}
-                        onOeeThresholdChange={(val) => setThresholds(t => ({...t, oee: val}))}
-                        onAvailabilityThresholdChange={(val) => setThresholds(t => ({...t, availability: val}))}
-                        onPerformanceThresholdChange={(val) => setThresholds(t => ({...t, performance: val}))}
-                        onQualityThresholdChange={(val) => setThresholds(t => ({...t, quality: val}))}
-                    />
-
-                    {isLoading ? (
-                        <div className="flex-1 flex items-center justify-center"><Loader2 size={48} className="animate-spin text-cyan-500" /></div>
-                    ) : error ? (
-                        <div className="flex-1 flex items-center justify-center text-red-500">{error}</div>
-                    ) : (
-                        renderTabContent()
-                    )}
-                </div>
-
-                {selectedMachineId && (
-                    <MachineDetailsModal
-                        isOpen={!!selectedMachineId}
-                        onClose={() => setSelectedMachineId(null)}
-                        machineInfo={selectedMachineInfo}
-                        productionRecord={selectedMachineProduction}
-                        downtimeRecords={selectedMachineDowntime}
-                        errorHistory={selectedMachineErrorHistory}
-                        maintenanceHistory={selectedMachineMaintenanceHistory}
-                        plannedMaintenance={selectedMachinePlannedMaintenance}
-                        theme={theme}
+                        onOeeThresholdChange={(val) => setThresholds(p => ({...p, oee: val}))}
+                        onAvailabilityThresholdChange={(val) => setThresholds(p => ({...p, availability: val}))}
+                        onPerformanceThresholdChange={(val) => setThresholds(p => ({...p, performance: val}))}
+                        onQualityThresholdChange={(val) => setThresholds(p => ({...p, quality: val}))}
                     />
                 )}
-                <HelpModal isOpen={isHelpModalOpen} onClose={() => setIsHelpModalOpen(false)} />
-                {isErrorReportModalOpen && data && (
-                    <ErrorReportModal 
-                        isOpen={isErrorReportModalOpen}
-                        onClose={() => setIsErrorReportModalOpen(false)}
-                        onSubmit={handleErrorReportSubmit}
-                        onUpdate={handleErrorReportUpdate}
-                        reportToUpdate={reportToUpdate}
-                        masterData={data.masterData}
-                        openMaintenanceOrders={openMaintenanceOrders}
-                    />
-                )}
-                {isMaintenanceOrderModalOpen && data && (
-                    <MaintenanceOrderModal
-                        isOpen={isMaintenanceOrderModalOpen}
-                        onClose={() => setIsMaintenanceOrderModalOpen(false)}
-                        onSubmit={handleMaintOrderSubmit}
-                        allMachines={data.masterData.machines}
-                        allUsers={data.masterData.users}
-                        allDefectCauses={data.masterData.defectCauses}
-                        openDefects={data.allDefectRecords.filter(d => d.status === 'Open')}
-                        currentDate={filters.endDate}
-                        allSpareParts={data.masterData.spareParts}
-                        defaults={maintenanceOrderDefaults}
-                    />
-                )}
-                {isMachineModalOpen && data && (
-                    <MachineEditModal
-                        isOpen={isMachineModalOpen}
-                        onClose={() => setIsMachineModalOpen(false)}
-                        onSubmit={handleMachineModalSubmit}
-                        machineToEdit={machineToEdit}
-                        allLines={data.availableLines}
-                    />
-                )}
-                 <SparePartDetailsModal
-                    isOpen={!!selectedSparePart}
-                    onClose={() => setSelectedSparePart(null)}
-                    part={selectedSparePart}
-                />
-                {isConsumableRequestModalOpen && (
-                    <ConsumableRequestModal 
-                        isOpen={isConsumableRequestModalOpen}
-                        onClose={() => setIsConsumableRequestModalOpen(false)}
-                        onSubmit={handleConsumableRequestSubmit}
-                    />
-                )}
-                {isMcPartRequestModalOpen && partForMcRequest && (
-                    <McPartRequestModal
-                        isOpen={isMcPartRequestModalOpen}
-                        onClose={() => setIsMcPartRequestModalOpen(false)}
-                        onSubmit={handleMcPartRequestSubmit}
-                        part={partForMcRequest}
-                    />
-                )}
-                {isNewMcPartRequestModalOpen && (
-                    <NewMcPartRequestModal
-                        isOpen={isNewMcPartRequestModalOpen}
-                        onClose={() => setIsNewMcPartRequestModalOpen(false)}
-                        onSubmit={handleNewMcPartRequestSubmit}
-                    />
-                )}
-                {isSparePartEditModalOpen && data && (
-                    <SparePartEditModal
-                        isOpen={isSparePartEditModalOpen}
-                        onClose={() => setIsSparePartEditModalOpen(false)}
-                        onSubmit={handleSparePartSubmit}
-                        partToEdit={partToEdit}
-                    />
-                )}
+                
+                {data && renderTabContent()}
             </main>
+            
+            {/* Modals */}
+            {data && selectedMachineDetails && (
+                <MachineDetailsModal 
+                    isOpen={!!selectedMachineId} 
+                    onClose={() => setSelectedMachineId(null)} 
+                    {...selectedMachineDetails}
+                    theme={theme}
+                />
+            )}
+            <HelpModal isOpen={isHelpModalOpen} onClose={() => setIsHelpModalOpen(false)} />
+            <DatabaseSchemaPanel isOpen={isDbPanelOpen} onClose={() => setIsDbPanelOpen(false)} />
+            {data && isErrorReportModalOpen && <ErrorReportModal isOpen={isErrorReportModalOpen} onClose={() => { setIsErrorReportModalOpen(false); setReportToUpdate(null); }} onSubmit={handleReportSubmit} onUpdate={handleReportUpdate} reportToUpdate={reportToUpdate} masterData={data.masterData} openMaintenanceOrders={data.maintenanceOrders.filter(o => o.status === 'Open' || o.status === 'InProgress')} />}
+            {data && isMaintenanceOrderModalOpen && <MaintenanceOrderModal isOpen={isMaintenanceOrderModalOpen} onClose={() => { setIsMaintenanceOrderModalOpen(false); setMaintenanceOrderDefaults(undefined); }} onSubmit={handleMaintenanceOrderSubmit} allMachines={data.masterData.machines} allUsers={data.masterData.users} allDefectCauses={data.masterData.defectCauses} openDefects={data.allDefectRecords.filter(d => d.status !== 'Closed')} currentDate={filters.endDate} allSpareParts={data.masterData.spareParts} defaults={maintenanceOrderDefaults} />}
+            {data && isMachineModalOpen && <MachineEditModal isOpen={isMachineModalOpen} onClose={() => { setIsMachineModalOpen(false); setMachineToEdit(null); }} onSubmit={handleMachineSubmit} machineToEdit={machineToEdit} allLines={data.availableLines} />}
+            {selectedSparePart && <SparePartDetailsModal isOpen={!!selectedSparePart} onClose={() => setSelectedSparePart(null)} part={selectedSparePart} />}
+            {isConsumableRequestModalOpen && <ConsumableRequestModal isOpen={isConsumableRequestModalOpen} onClose={() => setIsConsumableRequestModalOpen(false)} onSubmit={handleConsumableRequestSubmit} />}
+            {isMcPartRequestModalOpen && partForMcRequest && <McPartRequestModal isOpen={isMcPartRequestModalOpen} onClose={() => { setIsMcPartRequestModalOpen(false); setPartForMcRequest(null); }} onSubmit={handleMcPartRequestSubmit} part={partForMcRequest} />}
+            {isNewMcPartRequestModalOpen && <NewMcPartRequestModal isOpen={isNewMcPartRequestModalOpen} onClose={() => setIsNewMcPartRequestModalOpen(false)} onSubmit={handleMcPartRequestSubmit} />}
+            {isSparePartEditModalOpen && <SparePartEditModal isOpen={isSparePartEditModalOpen} onClose={() => { setIsSparePartEditModalOpen(false); setPartToEdit(null); }} onSubmit={handleSparePartSubmit} partToEdit={partToEdit} />}
+            {isChecklistModalOpen && <DeploymentChecklistModal isOpen={isChecklistModalOpen} onClose={() => setIsChecklistModalOpen(false)} />}
+            {data && isDataEntryModalOpen && <DataEntryModal isOpen={isDataEntryModalOpen} onClose={() => setIsDataEntryModalOpen(false)} onSubmit={handleDefectRecordSubmit} allMachines={data.masterData.machines} allShifts={data.masterData.shifts} allDefectTypes={data.masterData.defectTypes} allDefectCauses={data.masterData.defectCauses} openMaintenanceOrders={data.maintenanceOrders.filter(o => o.status === 'Open' || o.status === 'InProgress')} currentDate={filters.endDate} />}
+            {selectedDefectRecord && <DefectDetailsModal isOpen={!!selectedDefectRecord} onClose={() => setSelectedDefectRecord(null)} defect={selectedDefectRecord} onNavigateToLog={() => {}} />}
+
         </div>
     );
 };

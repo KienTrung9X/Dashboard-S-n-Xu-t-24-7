@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect } from 'react';
-// FIX: Imported missing types 'NewDefectData' and 'EnrichedMaintenanceOrder'
 import { NewDefectData, MachineInfo, Shift, DefectType, DefectCause, EnrichedMaintenanceOrder } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -89,8 +88,6 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubm
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
-            // FIX: Explicitly provide the generic type to `Array.from` to ensure the result is `File[]`
-            // instead of `unknown[]`, which caused a type error on assignment.
             const files: File[] = Array.from<File>(e.target.files).slice(0, 3);
             const previews = files.map(file => URL.createObjectURL(file));
             setImagePreviews(previews);
@@ -132,7 +129,6 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubm
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl text-gray-900 dark:text-white animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
                 <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                    {/* FIX: Corrected translation keys */}
                     <h2 className="text-2xl font-bold">{isConfirming ? t('confirmDefectReport') : `${t('reportDefectDetail')} (${isAbnormal ? t('abnormal') : t('fixed')})`}</h2>
                     <button onClick={onClose} aria-label="Close modal"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                 </header>
@@ -140,7 +136,6 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubm
                 {isConfirming ? (
                     <main className="p-6 space-y-3 max-h-[70vh] overflow-y-auto">
                         <div className="bg-gray-100 dark:bg-gray-700/50 p-4 rounded-lg space-y-2 text-sm">
-                            {/* FIX: Corrected translation keys */}
                             <p><strong>{t('category')}:</strong> {isAbnormal ? t('abnormalWaste') : t('fixedWaste')}</p>
                             <p><strong>{t('date')}:</strong> {formData.work_date}</p>
                             <p><strong>{t('machine')}:</strong> {selectedMachine?.MACHINE_ID} (Line {selectedMachine?.LINE_ID})</p>
@@ -157,8 +152,7 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubm
                         <main className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
                             {error && <div className="bg-red-900/50 text-red-300 p-3 rounded-md">{error}</div>}
                             <fieldset className="border dark:border-gray-600 p-4 rounded-md">
-                                {/* FIX: Corrected translation keys */}
-                                <legend className="px-2 font-semibold text-cyan-400">{t('defectCategory')}</legend>
+                                <legend className="px-2 font-semibold text-cyan-400">{t('category')}</legend>
                                 <div className="flex gap-x-6"><input type="radio" id="abnormal" checked={isAbnormal} onChange={() => setIsAbnormal(true)} /><label htmlFor="abnormal">{t('abnormal')}</label></div>
                                 <div className="flex gap-x-6"><input type="radio" id="fixed" checked={!isAbnormal} onChange={() => setIsAbnormal(false)} /><label htmlFor="fixed">{t('fixed')}</label></div>
                             </fieldset>
@@ -166,12 +160,10 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubm
                             <div className="p-4 border border-dashed border-gray-600 rounded-lg">
                                 <div className="flex items-center gap-3">
                                     <input id="link-maint-checkbox" type="checkbox" checked={linkToMaintenance} onChange={handleLinkCheckboxChange} className="h-4 w-4 rounded bg-gray-700 border-gray-500 text-cyan-500 focus:ring-cyan-600" />
-                                    {/* FIX: Corrected translation key */}
                                     <label htmlFor="link-maint-checkbox" className="font-semibold text-cyan-400">{t('linkToMaintOrder')}</label>
                                 </div>
                                 {linkToMaintenance && (
                                     <div className="mt-3 space-y-3 animate-fade-in-up">
-                                        {/* FIX: Corrected translation keys */}
                                         <p className="text-xs text-gray-400">{t('linkToMaintOrderHelp')}</p>
                                         <FormField label={t('selectOpenMaintOrder')} id="linked_order_id">
                                             <select name="linked_order_id" value={linkedOrderId ?? ''} onChange={handleOrderLinkChange} className={formInputClass}>
@@ -188,7 +180,6 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubm
                             </div>
 
                              <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-4 border dark:border-gray-600 p-4 rounded-md">
-                                {/* FIX: Corrected translation key */}
                                 <legend className="px-2 font-semibold text-cyan-400">{t('generalInfo')}</legend>
                                 <FormField label={t('date')} id="work_date" required><input type="date" name="work_date" value={formData.work_date} onChange={handleChange} className={formInputClass} required /></FormField>
                                 <FormField label={t('shift')} id="shift_id" required><select name="shift_id" value={formData.shift_id} onChange={handleChange} className={formInputClass}>{allShifts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></FormField>
@@ -196,7 +187,6 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubm
                                 {isAbnormal && <FormField label={t('status')} id="status" required><select name="status" value={formData.status} onChange={handleChange} className={formInputClass} disabled={!!linkedOrderId}><option>Open</option><option>In Progress</option><option>Closed</option></select></FormField>}
                             </fieldset>
                              <fieldset className="grid grid-cols-1 md:grid-cols-2 gap-4 border dark:border-gray-600 p-4 rounded-md">
-                                {/* FIX: Corrected translation keys */}
                                 <legend className="px-2 font-semibold text-cyan-400">{t('defectInfo')}</legend>
                                 <FormField label={t('defectType')} id="defect_type_id" required><select name="defect_type_id" value={formData.defect_type_id} onChange={handleChange} className={formInputClass}>{allDefectTypes.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></FormField>
                                 <FormField label={t('quantity')} id="quantity" required><input type="number" name="quantity" value={formData.quantity} onChange={handleChange} min="1" className={formInputClass} required/></FormField>
@@ -214,14 +204,12 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, onSubm
                 <footer className="px-6 py-4 bg-gray-900/50 flex justify-end gap-3 mt-auto">
                     {isConfirming ? (
                         <>
-                            {/* FIX: Corrected translation keys */}
                             <button onClick={() => setIsConfirming(false)} className="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-lg">{t('goBack')}</button>
                             <button onClick={handleFinalSubmit} className="bg-cyan-500 hover:bg-cyan-600 font-bold py-2 px-6 rounded-lg">{t('confirm')}</button>
                         </>
                     ) : (
                         <>
                             <button onClick={onClose} className="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-lg">{t('cancel')}</button>
-                            {/* FIX: Corrected translation key */}
                             <button type="submit" form="data-entry-form" className="bg-cyan-500 hover:bg-cyan-600 font-bold py-2 px-6 rounded-lg">{t('review')}</button>
                         </>
                     )}

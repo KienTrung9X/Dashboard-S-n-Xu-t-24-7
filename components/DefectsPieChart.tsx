@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
-// FIX: Replaced non-existent 'DefectData' with 'DataPoint' to match the expected data structure.
 import { DataPoint } from '../types';
 
 interface DefectsPieChartProps {
@@ -21,7 +20,6 @@ const DefectsPieChart: React.FC<DefectsPieChartProps> = ({ data }) => {
       <ResponsiveContainer>
         <PieChart>
           <Pie
-            // FIX: Cast data to a type with an index signature to resolve recharts type issue.
             data={data as {[key: string]: any}[]}
             dataKey="value"
             nameKey="name"
@@ -30,7 +28,6 @@ const DefectsPieChart: React.FC<DefectsPieChartProps> = ({ data }) => {
             outerRadius={100}
             fill="#8884d8"
             labelLine={false}
-            // FIX: The provided type was too strict. Replaced with a compatible type ('any') that accepts optional properties from recharts and includes checks to prevent runtime errors.
             label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
               if (cx === undefined || cy === undefined || midAngle === undefined || innerRadius === undefined || outerRadius === undefined || percent === undefined) {
                 return null;

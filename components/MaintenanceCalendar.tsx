@@ -75,7 +75,6 @@ const MaintenanceCalendar: React.FC<MaintenanceCalendarProps> = ({ year, month, 
                 <h3 className="text-xl font-bold">{monthName} {year}</h3>
                  <div className="flex items-center gap-4 text-sm">
                     <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500"></div>{t('overdue')}</span>
-                    {/* FIX: Changed 'due' to 'dueSoon' to match the existing translation key. */}
                     <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-500"></div>{t('dueSoon')}</span>
                     <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-cyan-900/50 border border-cyan-400"></div>{t('today')}</span>
                 </div>

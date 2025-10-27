@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-// FIX: Imported missing type 'EnrichedDefectRecord'
 import { EnrichedDefectRecord } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -56,7 +55,6 @@ const DefectLogTable: React.FC<DefectLogTableProps> = ({ data, onViewDetails }) 
                     <div><label>Search</label><input type="text" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} placeholder="Search..." className="w-full bg-gray-700 p-2 rounded"/></div>
                     <div><label>{t('severity')}</label><select name="severity" value={filters.severity} onChange={handleFilterChange} className="w-full bg-gray-700 p-2 rounded"><option value="all">{t('all')}</option><option>Low</option><option>Medium</option><option>High</option></select></div>
                     <div><label>{t('status')}</label><select name="status" value={filters.status} onChange={handleFilterChange} className="w-full bg-gray-700 p-2 rounded"><option value="all">{t('all')}</option><option>Open</option><option>In Progress</option><option>Closed</option></select></div>
-                    {/* FIX: Corrected translation keys */}
                     <div><label>{t('category')}</label><select name="is_abnormal" value={filters.is_abnormal} onChange={handleFilterChange} className="w-full bg-gray-700 p-2 rounded"><option value="all">{t('all')}</option><option value="true">{t('abnormal')}</option><option value="false">{t('fixed')}</option></select></div>
                 </div>
             </div>
@@ -67,7 +65,6 @@ const DefectLogTable: React.FC<DefectLogTableProps> = ({ data, onViewDetails }) 
                             <th className="py-3 px-4 text-left"><button onClick={() => requestSort('work_date')} className="group">{t('date')} {getSortIcon('work_date')}</button></th>
                             <th className="py-3 px-4 text-left"><button onClick={() => requestSort('defect_type_name')} className="group">{t('defectType')} {getSortIcon('defect_type_name')}</button></th>
                             <th className="py-3 px-4 text-left"><button onClick={() => requestSort('MACHINE_ID')} className="group">{t('machine')} {getSortIcon('MACHINE_ID')}</button></th>
-                            {/* FIX: Corrected translation key */}
                             <th className="py-3 px-4 text-left"><button onClick={() => requestSort('quantity')} className="group">{t('quantity')} {getSortIcon('quantity')}</button></th>
                             <th className="py-3 px-4 text-left"><button onClick={() => requestSort('severity')} className="group">{t('severity')} {getSortIcon('severity')}</button></th>
                             <th className="py-3 px-4 text-left"><button onClick={() => requestSort('status')} className="group">{t('status')} {getSortIcon('status')}</button></th>

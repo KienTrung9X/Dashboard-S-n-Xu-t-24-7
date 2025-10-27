@@ -21,10 +21,10 @@ const SparePartsInventory: React.FC<SparePartsInventoryProps> = ({ parts, onPart
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'part_code', direction: 'ascending' });
 
     const getPartStatus = (part: SparePart) => {
-        if ((part.available) < part.safety_stock) {
+        if ((part.available + part.in_transit) < part.reorder_point) {
             return { text: t('needToOrder'), color: 'text-red-400', icon: <AlertTriangle size={16} />, order: 1 };
         }
-        if (part.available < part.reorder_point) {
+        if (part.available < part.safety_stock) {
             return { text: t('almostOut'), color: 'text-yellow-400', icon: <Clock size={16} />, order: 2 };
         }
         return { text: t('sufficient'), color: 'text-green-400', icon: <CheckCircle size={16} />, order: 3 };
@@ -106,6 +106,7 @@ const SparePartsInventory: React.FC<SparePartsInventoryProps> = ({ parts, onPart
                     <table className="min-w-full divide-y divide-gray-700">
                         <thead className="bg-gray-700/50">
                             <tr>
+                                <th className="p-3 text-left">{t('image')}</th>
                                 {headers.map(header => (
                                     <th key={header.key} className="p-3 text-left">
                                         <button onClick={() => requestSort(header.key)} className="group flex items-center gap-2">
@@ -120,9 +121,21 @@ const SparePartsInventory: React.FC<SparePartsInventoryProps> = ({ parts, onPart
                         <tbody className="divide-y divide-gray-800">
                             {filteredAndSortedParts.map(part => {
                                 const status = getPartStatus(part);
+                                const isLowStock = status.order === 1; // Need to Order
+                                const isWarningStock = status.order === 2; // Almost out
                                 
                                 return (
-                                    <tr key={part.id} className={`hover:bg-gray-700/50 cursor-pointer`} onClick={() => onPartSelect(part)}>
+                                    <tr 
+                                        key={part.id} 
+                                        className={`transition-colors duration-200 cursor-pointer 
+                                            ${isLowStock ? 'bg-red-900/30 hover:bg-red-900/40' : 
+                                              isWarningStock ? 'bg-yellow-900/20 hover:bg-yellow-900/30' : 
+                                              'hover:bg-gray-700/50'}`}
+                                        onClick={() => onPartSelect(part)}
+                                    >
+                                        <td className="p-2">
+                                            <img src={part.image_url || `https://via.placeholder.com/64/374151/FFFFFF?Text=${part.part_code.substring(0,3)}`} alt={part.name} className="h-10 w-10 rounded-md object-cover"/>
+                                        </td>
                                         <td className="p-3 font-mono">{part.part_code}</td>
                                         <td className="p-3">{part.name}</td>
                                         <td className="p-3 font-semibold">{part.available}</td>

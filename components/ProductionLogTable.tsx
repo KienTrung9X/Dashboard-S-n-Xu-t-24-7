@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ProductionDaily, EnrichedDefectRecord, DefectType } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
-import { X, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { X, ExternalLink, Image as ImageIcon, ChevronDown } from 'lucide-react';
 
 interface ProductionLogTableProps {
   data: ProductionDaily[];
@@ -98,6 +98,93 @@ const FilterInput: React.FC<{ value: string; onChange: (e: React.ChangeEvent<HTM
         className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
     />
 );
+
+// New SearchableDropdown component
+interface SearchableDropdownProps {
+  options: { id: number | string; name: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  t: (key: any) => string;
+}
+
+const SearchableDropdown: React.FC<SearchableDropdownProps> = ({ options, value, onChange, placeholder, t }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredOptions = useMemo(() => {
+    return options.filter(option =>
+      option.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [options, searchTerm]);
+
+  const handleSelect = (optionName: string) => {
+    onChange(optionName);
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  const selectedOptionName = value === 'all' ? t('allDefectTypes') : value;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 flex justify-between items-center text-left"
+      >
+        <span className="truncate">{selectedOptionName}</span>
+        <ChevronDown size={16} className={`transition-transform flex-shrink-0 ml-2 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 flex flex-col animate-fade-in-up">
+          <div className="p-2 sticky top-0 bg-white dark:bg-gray-800 flex-shrink-0">
+            <input
+              type="text"
+              placeholder={placeholder}
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-1.5 px-2 text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              autoFocus
+            />
+          </div>
+          <ul className="py-1 overflow-y-auto">
+            <li
+              onClick={() => handleSelect('all')}
+              className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+            >
+              {t('allDefectTypes')}
+            </li>
+            {filteredOptions.map(option => (
+              <li
+                key={option.id}
+                onClick={() => handleSelect(option.name)}
+                className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+              >
+                {option.name}
+              </li>
+            ))}
+            {filteredOptions.length === 0 && searchTerm && (
+                <li className="px-4 py-2 text-sm text-gray-500 italic">No results found</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
 
 
 const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachineSelect, oeeThreshold, allDefectTypes, allDefectRecords }) => {
@@ -293,17 +380,13 @@ const ProductionLogTable: React.FC<ProductionLogTableProps> = ({ data, onMachine
 
           <div>
             <label htmlFor="defect-type-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('defectType')}</label>
-            <select
-              id="defect-type-select"
+             <SearchableDropdown
+              options={allDefectTypes}
               value={selectedDefectType}
-              onChange={(e) => setSelectedDefectType(e.target.value)}
-              className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md py-2 px-3 text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            >
-              <option value="all">{t('allDefectTypes')}</option>
-              {allDefectTypes.map(type => (
-                <option key={type.id} value={type.name}>{type.name}</option>
-              ))}
-            </select>
+              onChange={(value) => setSelectedDefectType(value)}
+              placeholder="Search defect types..."
+              t={t}
+            />
           </div>
           
           <div>

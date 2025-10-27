@@ -6,7 +6,7 @@ interface DefectDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   defect: EnrichedDefectRecord | null;
-  onNavigateToLog: (date: string, shift: 'A' | 'B' | 'C') => void;
+  onNavigateToLog: (date: string, machineId: string, shift: 'A' | 'B' | 'C') => void;
 }
 
 const DetailItem: React.FC<{ label: string; value: React.ReactNode; fullWidth?: boolean }> = ({ label, value, fullWidth = false }) => (
@@ -20,7 +20,7 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({ isOpen, onClose
   if (!isOpen || !defect) return null;
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose(); };
-  const handleNavigateClick = () => { if (defect) { onNavigateToLog(defect.work_date, defect.SHIFT); onClose(); }};
+  const handleNavigateClick = () => { if (defect) { onNavigateToLog(defect.work_date, defect.MACHINE_ID, defect.SHIFT); onClose(); }};
 
   const getSeverityChip = (severity: 'Low' | 'Medium' | 'High') => {
     const styles = { Low: 'bg-green-900 text-green-300', Medium: 'bg-yellow-900 text-yellow-300', High: 'bg-red-900 text-red-300' };

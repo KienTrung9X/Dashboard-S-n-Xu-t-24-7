@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { MachineInfo, MachineStatusData } from '../types';
 import { LINE_TO_AREA_MAP } from '../services/dataService';
 import { useTranslation } from '../i18n/LanguageContext';
-import { Plus, Edit } from 'lucide-react';
+import { Plus, Edit, PlayCircle, PauseCircle, AlertTriangle, XCircle } from 'lucide-react';
 
 interface ShopFloorLayoutProps {
     allMachines: MachineInfo[];
@@ -10,27 +10,26 @@ interface ShopFloorLayoutProps {
     onMachineSelect: (machineId: string) => void;
     onAddMachine: () => void;
     onEditMachine: (machine: MachineInfo) => void;
-    onUpdateMachinePosition: (machineId: number, newPosition: { x: number, y: number }) => void;
+    onUpdateMachinePosition: (machineId: number, newPosition: { x: number; y: number }) => void;
 }
 
 type MergedMachine = MachineInfo & {
     statusData: MachineStatusData;
 };
 
-const statusConfig: Record<string, { dotClass: string; animationClass?: string; labelKey: string }> = {
-    Running: { dotClass: 'bg-green-500', labelKey: 'running' },
-    Stopped: { dotClass: 'bg-yellow-500', labelKey: 'stopped' },
-    Error: { dotClass: 'bg-red-500', animationClass: 'animate-pulse', labelKey: 'error' },
-    Inactive: { dotClass: 'bg-gray-500', labelKey: 'inactive' },
+const statusConfig: Record<string, { icon: React.ReactNode; labelKey: string; colorClasses: string; animationClass?: string }> = {
+    Running: { icon: <PlayCircle size={16} className="text-green-500" />, labelKey: 'running', colorClasses: 'border-green-500/50 bg-green-500/5 dark:bg-green-900/10' },
+    Stopped: { icon: <PauseCircle size={16} className="text-yellow-500" />, labelKey: 'stopped', colorClasses: 'border-yellow-500/50 bg-yellow-500/5 dark:bg-yellow-900/10' },
+    Error: { icon: <AlertTriangle size={16} className="text-red-500" />, labelKey: 'error', colorClasses: 'border-red-500 bg-red-500/5 dark:bg-red-900/10', animationClass: 'animate-error-highlight' },
+    Inactive: { icon: <XCircle size={16} className="text-gray-500" />, labelKey: 'inactive', colorClasses: 'border-gray-500/50 bg-gray-500/5 dark:bg-gray-800' },
 };
 
 const MachineNode: React.FC<{ 
     machine: MergedMachine; 
     position: { x: number, y: number };
-    onSelect: (id: string) => void; 
     onEdit: (machine: MachineInfo) => void;
     onMouseDown: (e: React.MouseEvent, machine: MergedMachine) => void;
-}> = ({ machine, position, onSelect, onEdit, onMouseDown }) => {
+}> = ({ machine, position, onEdit, onMouseDown }) => {
     const { t } = useTranslation();
     const config = statusConfig[machine.statusData.status];
     const oee = machine.statusData?.oee;
@@ -43,14 +42,13 @@ const MachineNode: React.FC<{
             onMouseDown={(e) => onMouseDown(e, machine)}
         >
             <div
-                onClick={() => onSelect(machine.MACHINE_ID)}
-                className={`w-20 h-14 rounded-md shadow-lg flex flex-col items-center justify-center transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900 focus:ring-cyan-500 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:border-cyan-500 dark:hover:border-cyan-400 ${machine.statusData.status === 'Error' ? 'animate-error-highlight border-red-500' : ''}`}
+                className={`w-28 h-16 rounded-lg shadow-lg flex flex-col items-center justify-center transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900 focus:ring-cyan-500 border-2 hover:border-cyan-500 dark:hover:border-cyan-400 ${config.colorClasses} ${config.animationClass || ''}`}
             >
                 <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${config.dotClass} ${config.animationClass || ''}`}></span>
-                    <span className="font-bold text-base text-gray-800 dark:text-white">{machine.MACHINE_ID}</span>
+                    {config.icon}
+                    <span className="font-bold text-lg text-gray-800 dark:text-white">{machine.MACHINE_ID}</span>
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">{t(config.labelKey as any)}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">OEE: {oeePercentage}</span>
             </div>
             {/* Tooltip */}
             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 bg-gray-900 text-white text-xs rounded-lg py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 text-center">
@@ -63,10 +61,10 @@ const MachineNode: React.FC<{
             <div className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                 <button
                     onClick={(e) => { e.stopPropagation(); onEdit(machine); }}
-                    className="p-1.5 bg-gray-700 hover:bg-cyan-600 rounded-full text-white"
+                    className="p-2 bg-cyan-500 hover:bg-cyan-600 rounded-full text-white shadow-md"
                     title={t('editMachine')}
                 >
-                    <Edit size={10} />
+                    <Edit size={12} />
                 </button>
             </div>
         </div>
@@ -79,6 +77,7 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
     const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
     const [draggedMachine, setDraggedMachine] = useState<{ id: string; offsetX: number; offsetY: number; machineInfo: MergedMachine } | null>(null);
     const layoutRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const isDraggingRef = useRef(false);
     
     useEffect(() => {
         const initialPositions = allMachines.reduce((acc, m) => {
@@ -90,6 +89,7 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
 
     const handleMouseDown = (e: React.MouseEvent, machine: MergedMachine) => {
         e.preventDefault();
+        isDraggingRef.current = false;
         const node = e.currentTarget as HTMLElement;
         const rect = node.getBoundingClientRect();
         
@@ -103,10 +103,11 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
     const handleMouseMove = (e: React.MouseEvent, area: string) => {
         if (!draggedMachine || !layoutRefs.current[area]) return;
         
+        isDraggingRef.current = true;
         const layoutRect = layoutRefs.current[area]!.getBoundingClientRect();
 
-        const nodeWidth = 80; // w-20 is 5rem
-        const nodeHeight = 56; // h-14 is 3.5rem
+        const nodeWidth = 112; // w-28 is 7rem
+        const nodeHeight = 64; // h-16 is 4rem
 
         // Calculate new top-left position in pixels, relative to the layout container
         let newX_px = e.clientX - layoutRect.left - draggedMachine.offsetX;
@@ -132,9 +133,15 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
 
     const handleMouseUp = () => {
         if (draggedMachine) {
-            const finalPosition = positions[draggedMachine.id];
-            if(finalPosition) {
-                onUpdateMachinePosition(draggedMachine.machineInfo.id, finalPosition);
+            if (isDraggingRef.current) {
+                // This was a drag, save the final position
+                const finalPosition = positions[draggedMachine.id];
+                if(finalPosition) {
+                    onUpdateMachinePosition(draggedMachine.machineInfo.id, finalPosition);
+                }
+            } else {
+                // This was a click, trigger selection
+                onMachineSelect(draggedMachine.id);
             }
             setDraggedMachine(null);
         }
@@ -165,7 +172,6 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
                             <h3 className="font-bold text-lg text-gray-800 dark:text-white">{area} <span className="text-sm font-normal text-gray-500 dark:text-gray-400">({machines.length} {t('machines')})</span></h3>
                         </header>
                         <div 
-                            // FIX: Ref callbacks should not return a value. Wrapped the assignment in curly braces to ensure the function returns void.
                             ref={el => { layoutRefs.current[area] = el; }}
                             onMouseMove={(e) => handleMouseMove(e, area)}
                             onMouseUp={handleMouseUp}
@@ -180,7 +186,6 @@ const ShopFloorLayout: React.FC<ShopFloorLayoutProps> = ({ allMachines, machineS
                                         key={machine.MACHINE_ID}
                                         machine={machine}
                                         position={position}
-                                        onSelect={onMachineSelect}
                                         onEdit={onEditMachine}
                                         onMouseDown={handleMouseDown}
                                     />

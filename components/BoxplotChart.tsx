@@ -94,7 +94,6 @@ const BoxplotChart: React.FC<BoxplotChartProps> = ({ data, theme = 'light' }) =>
                     {/* A transparent bar to provide the positions for our custom shape. 
                         Its height is irrelevant as the shape calculates its own dimensions.
                         We set its dataKey to a value within our domain to ensure it renders. */}
-                    {/* FIX: The 'shape' prop is not valid on <Cell>. It should be on the <Bar> component to render a custom shape for each data point. */}
                     <Bar dataKey="max" fill="transparent" isAnimationActive={false} shape={<Box />} />
                 </ComposedChart>
             </ResponsiveContainer>
